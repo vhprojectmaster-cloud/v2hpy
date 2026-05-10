@@ -1,16 +1,20 @@
 import RPi.GPIO as GPIO
 import time
 
-relay = 17
+relay_pin = 27   # GPIO27 = physical pin 13
 
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(relay, GPIO.OUT)
+GPIO.setup(relay_pin, GPIO.OUT)
 
-print("Relay ON")
-GPIO.output(relay, GPIO.LOW)
-time.sleep(3)
+try:
+    while True:
+        print("Relay 2 ON")
+        GPIO.output(relay_pin, GPIO.LOW)   # active LOW relay ON
+        time.sleep(3)
 
-print("Relay OFF")
-GPIO.output(relay, GPIO.HIGH)
+        print("Relay 2 OFF")
+        GPIO.output(relay_pin, GPIO.HIGH)  # relay OFF
+        time.sleep(3)
 
-GPIO.cleanup()
+except KeyboardInterrupt:
+    GPIO.cleanup()
