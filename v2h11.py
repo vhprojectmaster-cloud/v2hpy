@@ -6,10 +6,10 @@ import os
 
 
 
-# Relay setup
+
 relay = OutputDevice(27, active_high=True, initial_value=False)
 
-# System settings
+
 EV_BATTERY_KWH = 60.0
 EV_MAX_POWER_KW = 3.3
 
@@ -18,16 +18,14 @@ SOC_MAX = 95.0
 SOC_RESERVE = 30.0
 
 PV_REFERENCE_KW = 4.0
-
-# 24 hours compressed into 5 minutes
 HOUR_DELAY_SECONDS = 12.5
 
-# Starting EV SOC
+
 ev_soc = 75.0
 
 
 
-# Sunny day PV + EV available all day
+# scenario 1  (Sunny day PV + EV available all day)
 
 
 hours = list(range(24))
