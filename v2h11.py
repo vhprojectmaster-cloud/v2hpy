@@ -4,22 +4,7 @@ from datetime import datetime
 import csv
 import os
 
-# ============================================================
-# SUNNY DAY PV + EV AVAILABLE V2H FUZZY RELAY DEMO
-#
-# Hardware:
-# Relay IN2 -> GPIO27 / physical pin 13
-#
-# IMPORTANT:
-# This version uses active_high=True because your relay was
-# working opposite with active_high=False.
-#
-# Relay ON  = V2H discharging active
-# Relay OFF = no V2H discharge
-#
-# 24 simulated hours = 5 real minutes
-# 1 simulated hour = 12.5 seconds
-# ============================================================
+
 
 # Relay setup
 relay = OutputDevice(27, active_high=True, initial_value=False)
@@ -40,10 +25,10 @@ HOUR_DELAY_SECONDS = 12.5
 # Starting EV SOC
 ev_soc = 75.0
 
-# -----------------------------
-# Scenario 1 Dataset
+
+
 # Sunny day PV + EV available all day
-# -----------------------------
+
 
 hours = list(range(24))
 
@@ -67,9 +52,9 @@ pv_generation_kw = [
 ev_available = [1] * 24
 
 
-# -----------------------------
-# Membership functions
-# -----------------------------
+
+# fuzzy Membership functions
+
 
 def triangle(x, a, b, c):
     if x <= a or x >= c:
@@ -109,9 +94,9 @@ def is_peak_hour(hour):
     return 17 <= hour <= 21
 
 
-# -----------------------------
+
 # Fuzzy V2H Controller
-# -----------------------------
+
 
 def fuzzy_v2h_controller(hour, load, pv, soc, available):
     net_load = load - pv
@@ -141,14 +126,14 @@ def fuzzy_v2h_controller(hour, load, pv, soc, available):
 
     peak = 1.0 if is_peak_hour(hour) else 0.0
 
-    # -----------------------------
+  
     # Fuzzy rules
     # Score:
     # 0   = hold
     # 60  = slow discharge
     # 80  = medium discharge
     # 100 = fast discharge
-    # -----------------------------
+  
 
     rules = []
 
@@ -193,9 +178,9 @@ def fuzzy_v2h_controller(hour, load, pv, soc, available):
     return decision, ev_power, relay_on, fuzzy_score, net_load, solar_ratio
 
 
-# -----------------------------
+
 # SOC update
-# -----------------------------
+
 
 def update_soc(soc, ev_power):
     # Positive EV power means discharging
@@ -211,9 +196,9 @@ def update_soc(soc, ev_power):
     return new_soc
 
 
-# -----------------------------
-# Main program
-# -----------------------------
+
+# Main loop
+
 
 def main():
     global ev_soc
