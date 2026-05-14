@@ -148,5 +148,5 @@ def main():
         print("Relay OFF safely.")
         print(f"Log saved to: {log_file}")
 
-if _name_ == "_main_":
-    main()
+if __name__== "__main__":
+   main()
