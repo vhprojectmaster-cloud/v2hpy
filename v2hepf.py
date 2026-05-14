@@ -14,7 +14,7 @@ import os
 # 24 simulated hours compressed into 5 real minutes
 # ============================================================
 
-relay = OutputDevice(27, active_high=False, initial_value=False)
+relay = OutputDevice(27, active_high=True, initial_value=False)
 
 EV_BATTERY_KWH = 60.0
 EV_MAX_POWER_KW = 3.3
