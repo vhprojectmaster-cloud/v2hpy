@@ -75,11 +75,11 @@ def main():
     global ev_soc
 
     os.makedirs("logs", exist_ok=True)
-    log_file = "logs/scenario4_emergency_backup_log.csv"
+    log_file = "logs/scenario3_emergency_backup_log.csv"
     results = []
 
     print("===================================================")
-    print(" SCENARIO 4: EMERGENCY POWER FAILURE MODE")
+    print(" SCENARIO 3: EMERGENCY POWER FAILURE MODE")
     print(" Relay ON = critical load supplied by EV battery")
     print("===================================================")
 
