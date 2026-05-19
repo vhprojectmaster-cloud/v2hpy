@@ -5,7 +5,7 @@ import csv
 import os
 
 # ============================================================
-# WINTER DAY V2H FUZZY RELAY CONTROL
+# WINTER DAY V2H FUZZY RELAY CONTROL WITH SUMMARY MATRIX
 #
 # Relay IN2 -> GPIO27 / physical pin 13
 #
@@ -16,7 +16,8 @@ import os
 # 1 simulated hour = 12.5 seconds
 # ============================================================
 
-# Use active_high=True because your relay was working opposite before
+# Use active_high=True because your relay was working opposite before.
+# If relay works opposite again, change True to False.
 relay = OutputDevice(27, active_high=True, initial_value=False)
 
 # -----------------------------
@@ -239,6 +240,131 @@ def update_soc(soc, ev_power):
 
 
 # -----------------------------
+# Summary matrix
+# -----------------------------
+
+def create_summary_matrix(results):
+    total_home_energy = sum(row["load_kw"] for row in results)
+    total_pv_energy = sum(row["pv_kw"] for row in results)
+
+    baseline_import_energy = sum(max(row["net_load_kw"], 0.0) for row in results)
+    managed_import_energy = sum(max(row["grid_kw"], 0.0) for row in results)
+
+    baseline_export_energy = sum(max(-row["net_load_kw"], 0.0) for row in results)
+    managed_export_energy = sum(max(-row["grid_kw"], 0.0) for row in results)
+
+    ev_discharge_energy = sum(max(row["ev_power_kw"], 0.0) for row in results)
+
+    baseline_peak = max(max(row["net_load_kw"], 0.0) for row in results)
+    managed_peak = max(max(row["grid_kw"], 0.0) for row in results)
+
+    peak_reduction_kw = baseline_peak - managed_peak
+
+    if baseline_peak > 0:
+        peak_reduction_percent = (peak_reduction_kw / baseline_peak) * 100.0
+    else:
+        peak_reduction_percent = 0.0
+
+    grid_import_reduction = baseline_import_energy - managed_import_energy
+
+    if baseline_import_energy > 0:
+        grid_import_reduction_percent = (
+            grid_import_reduction / baseline_import_energy
+        ) * 100.0
+    else:
+        grid_import_reduction_percent = 0.0
+
+    initial_soc = results[0]["soc_before_percent"]
+    final_soc = results[-1]["soc_after_percent"]
+    minimum_soc = min(row["soc_after_percent"] for row in results)
+
+    relay_on_hours = sum(1 for row in results if row["relay"] == "ON")
+
+    v2h_active_hours = [
+        f"{row['hour']:02d}:00"
+        for row in results
+        if row["relay"] == "ON"
+    ]
+
+    afternoon_v2h_hours = [
+        f"{row['hour']:02d}:00"
+        for row in results
+        if row["decision"] == "AFTERNOON_V2H"
+    ]
+
+    evening_v2h_hours = [
+        f"{row['hour']:02d}:00"
+        for row in results
+        if row["decision"] == "EVENING_MAX_V2H"
+    ]
+
+    general_v2h_hours = [
+        f"{row['hour']:02d}:00"
+        for row in results
+        if row["decision"] == "GENERAL_V2H"
+    ]
+
+    if total_pv_energy > 0:
+        baseline_pv_self_consumption = (
+            (total_pv_energy - baseline_export_energy) / total_pv_energy
+        ) * 100.0
+
+        managed_pv_self_consumption = (
+            (total_pv_energy - managed_export_energy) / total_pv_energy
+        ) * 100.0
+    else:
+        baseline_pv_self_consumption = 0.0
+        managed_pv_self_consumption = 0.0
+
+    summary = {
+        "Scenario": "Winter V2H fuzzy control",
+        "Total home load energy (kWh)": round(total_home_energy, 2),
+        "Total PV generation (kWh)": round(total_pv_energy, 2),
+        "Baseline grid import energy (kWh)": round(baseline_import_energy, 2),
+        "Managed grid import energy (kWh)": round(managed_import_energy, 2),
+        "Grid import reduction (kWh)": round(grid_import_reduction, 2),
+        "Grid import reduction (%)": round(grid_import_reduction_percent, 1),
+        "Baseline grid export energy (kWh)": round(baseline_export_energy, 2),
+        "Managed grid export energy (kWh)": round(managed_export_energy, 2),
+        "EV discharge energy (kWh)": round(ev_discharge_energy, 2),
+        "Baseline peak demand (kW)": round(baseline_peak, 2),
+        "Managed peak demand (kW)": round(managed_peak, 2),
+        "Peak demand reduction (kW)": round(peak_reduction_kw, 2),
+        "Peak demand reduction (%)": round(peak_reduction_percent, 1),
+        "Initial SOC (%)": round(initial_soc, 2),
+        "Final SOC (%)": round(final_soc, 2),
+        "Minimum SOC (%)": round(minimum_soc, 2),
+        "Relay ON hours": relay_on_hours,
+        "V2H active hours": ", ".join(v2h_active_hours),
+        "Afternoon V2H hours": ", ".join(afternoon_v2h_hours),
+        "Evening V2H hours": ", ".join(evening_v2h_hours),
+        "General V2H hours": ", ".join(general_v2h_hours),
+        "Baseline PV self-consumption (%)": round(baseline_pv_self_consumption, 1),
+        "Managed PV self-consumption (%)": round(managed_pv_self_consumption, 1),
+    }
+
+    return summary
+
+
+def print_summary_matrix(summary):
+    print("\n================ WINTER SUMMARY MATRIX ================")
+
+    for key, value in summary.items():
+        print(f"{key:42s}: {value}")
+
+    print("=======================================================")
+
+
+def save_summary_matrix(summary, file_path):
+    with open(file_path, "w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["metric", "value"])
+
+        for key, value in summary.items():
+            writer.writerow([key, value])
+
+
+# -----------------------------
 # Main program
 # -----------------------------
 
@@ -246,7 +372,9 @@ def main():
     ev_soc = INITIAL_SOC
 
     os.makedirs("logs", exist_ok=True)
-    log_file = "logs/combined_winter_v2h.csv"
+
+    hourly_log_file = "logs/combined_winter_v2h.csv"
+    summary_log_file = "logs/winter_v2h_summary_matrix.csv"
 
     results = []
 
@@ -263,6 +391,8 @@ def main():
             pv = pv_generation_kw[i]
             available = ev_available[i]
 
+            soc_before = ev_soc
+
             decision, ev_power, relay_on, fuzzy_score, net_load, solar_ratio = fuzzy_v2h_controller(
                 hour,
                 load,
@@ -278,12 +408,15 @@ def main():
             else:
                 relay.off()
 
+            ev_soc = update_soc(ev_soc, ev_power)
+            soc_after = ev_soc
+
             print(
                 f"{hour:02d}:00 | "
                 f"Load={load:4.2f} kW | "
                 f"PV={pv:4.2f} kW | "
                 f"Net={net_load:5.2f} kW | "
-                f"SOC={ev_soc:5.1f}% | "
+                f"SOC={soc_before:5.1f}% -> {soc_after:5.1f}% | "
                 f"Solar={solar_ratio:4.2f} | "
                 f"Score={fuzzy_score:5.1f} | "
                 f"EV={ev_power:4.2f} kW | "
@@ -299,15 +432,14 @@ def main():
                 "pv_kw": pv,
                 "net_load_kw": round(net_load, 3),
                 "solar_ratio": round(solar_ratio, 3),
-                "soc_percent": round(ev_soc, 2),
+                "soc_before_percent": round(soc_before, 2),
+                "soc_after_percent": round(soc_after, 2),
                 "fuzzy_score": round(fuzzy_score, 2),
                 "decision": decision,
                 "ev_power_kw": round(ev_power, 3),
                 "grid_kw": round(managed_grid, 3),
                 "relay": "ON" if relay_on else "OFF"
             })
-
-            ev_soc = update_soc(ev_soc, ev_power)
 
             sleep(HOUR_DELAY_SECONDS)
 
@@ -318,27 +450,38 @@ def main():
         relay.off()
         print("Relay OFF safely.")
 
-        fieldnames = [
-            "timestamp",
-            "hour",
-            "load_kw",
-            "pv_kw",
-            "net_load_kw",
-            "solar_ratio",
-            "soc_percent",
-            "fuzzy_score",
-            "decision",
-            "ev_power_kw",
-            "grid_kw",
-            "relay"
-        ]
+        if len(results) > 0:
+            fieldnames = [
+                "timestamp",
+                "hour",
+                "load_kw",
+                "pv_kw",
+                "net_load_kw",
+                "solar_ratio",
+                "soc_before_percent",
+                "soc_after_percent",
+                "fuzzy_score",
+                "decision",
+                "ev_power_kw",
+                "grid_kw",
+                "relay"
+            ]
 
-        with open(log_file, "w", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(results)
+            with open(hourly_log_file, "w", newline="") as file:
+                writer = csv.DictWriter(file, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(results)
 
-        print(f"Log saved to: {log_file}")
+            summary = create_summary_matrix(results)
+            print_summary_matrix(summary)
+            save_summary_matrix(summary, summary_log_file)
+
+            print(f"\nHourly log saved to: {hourly_log_file}")
+            print(f"Summary matrix saved to: {summary_log_file}")
+
+        else:
+            print("No results recorded, so no CSV files were saved.")
+
         print("Combined winter simulation complete")
 
 
