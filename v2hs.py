@@ -442,5 +442,5 @@ def main():
         print("Scenario 4 peak demand mitigation simulation complete.")
 
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     main()
