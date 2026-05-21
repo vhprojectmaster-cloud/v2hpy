@@ -4,11 +4,11 @@ from datetime import datetime
 import csv
 import os
 
+
 # ============================================================
-# Harshil's SCENARIO :
-# DYNAMIC PRICE + EXPORT LIMIT + CO2 + BATTERY WEAR AWARE V2H
+# HARSHIL'S SCENARIO
+# Dynamic price + export limit + CO2 + battery wear aware V2H
 #
-# Hardware:
 # Relay IN2 -> Raspberry Pi GPIO27 / physical pin 13
 #
 # Relay/Lamp:
@@ -26,33 +26,33 @@ import os
 
 
 # -----------------------------
-# RELAY SETUP
+# Relay setup
 # -----------------------------
-# You previously fixed your relay using active_high=True.
-# If the lamp works opposite, change True to False.
+# Your relay was working correctly with active_high=True.
+# If the lamp works opposite again, change True to False.
 
 relay = OutputDevice(27, active_high=True, initial_value=False)
 
 
 # -----------------------------
-# FILE PATHS
+# Folder and file paths
 # -----------------------------
 
 DATA_DIR = "data"
 LOG_DIR = "logs"
 
-ENERGY_PROFILE_FILE = os.path.join(DATA_DIR, "scenario5_energy_profile.csv")
-MARKET_NETWORK_FILE = os.path.join(DATA_DIR, "scenario5_market_network.csv")
-BATTERY_PROFILE_FILE = os.path.join(DATA_DIR, "scenario5_battery_profile.csv")
+ENERGY_PROFILE_FILE = os.path.join(DATA_DIR, "harshil_energy_profile.csv")
+MARKET_NETWORK_FILE = os.path.join(DATA_DIR, "harshil_market_network.csv")
+BATTERY_PROFILE_FILE = os.path.join(DATA_DIR, "harshil_battery_profile.csv")
 
-HOURLY_LOG_FILE = os.path.join(LOG_DIR, "scenario5_hourly_log.csv")
-SUMMARY_MATRIX_FILE = os.path.join(LOG_DIR, "scenario5_summary_matrix.csv")
-RULE_TRACE_FILE = os.path.join(LOG_DIR, "scenario5_rule_trace.csv")
-EVENT_LOG_FILE = os.path.join(LOG_DIR, "scenario5_event_log.csv")
+HOURLY_LOG_FILE = os.path.join(LOG_DIR, "harshil_hourly_log.csv")
+SUMMARY_MATRIX_FILE = os.path.join(LOG_DIR, "harshil_summary_matrix.csv")
+RULE_TRACE_FILE = os.path.join(LOG_DIR, "harshil_rule_trace.csv")
+EVENT_LOG_FILE = os.path.join(LOG_DIR, "harshil_event_log.csv")
 
 
 # -----------------------------
-# SYSTEM CONSTANTS
+# System settings
 # -----------------------------
 
 EV_BATTERY_KWH = 60.0
@@ -63,21 +63,20 @@ SOC_MIN = 20.0
 SOC_MAX = 95.0
 
 PV_REFERENCE_KW = 4.0
-
 INITIAL_SOC = 72.0
 
 # 24 hours compressed into 5 minutes
 HOUR_DELAY_SECONDS = 12.5
 
-# Relay turns ON only when V2H score crosses this threshold
+# Relay turns ON only when V2H score crosses this value
 V2H_SCORE_THRESHOLD = 55.0
 
-# Used to reduce excessive cycling
+# Used to reduce excessive battery cycling
 DAILY_DISCHARGE_BUDGET_KWH = 10.0
 
 
 # ============================================================
-# CSV INPUT DATA CREATION
+# Create input CSV files if they are missing
 # ============================================================
 
 def create_input_csvs_if_missing():
@@ -121,7 +120,7 @@ def create_input_csvs_if_missing():
                 "pv_forecast_kw",
                 "ev_available",
                 "trip_reserve_soc",
-                "critical_load_level"
+                "critical_load_level",
             ])
             writer.writerows(energy_rows)
 
@@ -162,7 +161,7 @@ def create_input_csvs_if_missing():
                 "feed_in_price_c_per_kwh",
                 "export_limit_kw",
                 "network_stress_level",
-                "grid_co2_kg_per_kwh"
+                "grid_co2_kg_per_kwh",
             ])
             writer.writerows(market_rows)
 
@@ -201,13 +200,13 @@ def create_input_csvs_if_missing():
                 "hour",
                 "battery_temp_c",
                 "cycle_budget_remaining",
-                "battery_wear_cost_c_per_kwh"
+                "battery_wear_cost_c_per_kwh",
             ])
             writer.writerows(battery_rows)
 
 
 # ============================================================
-# CSV LOADING
+# CSV loading
 # ============================================================
 
 def read_csv_by_hour(file_path):
@@ -228,54 +227,62 @@ def load_input_data():
     market_data = read_csv_by_hour(MARKET_NETWORK_FILE)
     battery_data = read_csv_by_hour(BATTERY_PROFILE_FILE)
 
-    rows = []
+    combined_rows = []
 
     for hour in range(24):
-        e = energy_data[hour]
-        m = market_data[hour]
-        b = battery_data[hour]
+        energy = energy_data[hour]
+        market = market_data[hour]
+        battery = battery_data[hour]
 
-        rows.append({
+        combined_rows.append({
             "hour": hour,
-            "home_load_kw": float(e["home_load_kw"]),
-            "pv_actual_kw": float(e["pv_actual_kw"]),
-            "pv_forecast_kw": float(e["pv_forecast_kw"]),
-            "ev_available": int(e["ev_available"]),
-            "trip_reserve_soc": float(e["trip_reserve_soc"]),
-            "critical_load_level": float(e["critical_load_level"]),
-            "import_price_c_per_kwh": float(m["import_price_c_per_kwh"]),
-            "feed_in_price_c_per_kwh": float(m["feed_in_price_c_per_kwh"]),
-            "export_limit_kw": float(m["export_limit_kw"]),
-            "network_stress_level": float(m["network_stress_level"]),
-            "grid_co2_kg_per_kwh": float(m["grid_co2_kg_per_kwh"]),
-            "battery_temp_c": float(b["battery_temp_c"]),
-            "cycle_budget_remaining": float(b["cycle_budget_remaining"]),
-            "battery_wear_cost_c_per_kwh": float(b["battery_wear_cost_c_per_kwh"])
+            "home_load_kw": float(energy["home_load_kw"]),
+            "pv_actual_kw": float(energy["pv_actual_kw"]),
+            "pv_forecast_kw": float(energy["pv_forecast_kw"]),
+            "ev_available": int(energy["ev_available"]),
+            "trip_reserve_soc": float(energy["trip_reserve_soc"]),
+            "critical_load_level": float(energy["critical_load_level"]),
+
+            "import_price_c_per_kwh": float(market["import_price_c_per_kwh"]),
+            "feed_in_price_c_per_kwh": float(market["feed_in_price_c_per_kwh"]),
+            "export_limit_kw": float(market["export_limit_kw"]),
+            "network_stress_level": float(market["network_stress_level"]),
+            "grid_co2_kg_per_kwh": float(market["grid_co2_kg_per_kwh"]),
+
+            "battery_temp_c": float(battery["battery_temp_c"]),
+            "cycle_budget_remaining": float(battery["cycle_budget_remaining"]),
+            "battery_wear_cost_c_per_kwh": float(battery["battery_wear_cost_c_per_kwh"]),
         })
 
-    return rows
+    return combined_rows
 
 
 # ============================================================
-# FUZZY MEMBERSHIP FUNCTIONS
+# Fuzzy helper functions
 # ============================================================
 
 def triangle(x, a, b, c):
     if x <= a or x >= c:
         return 0.0
+
     if x == b:
         return 1.0
+
     if a < x < b:
         return (x - a) / (b - a)
+
     if b < x < c:
         return (c - x) / (c - b)
+
     return 0.0
 
 
 def trapezoid(x, a, b, c, d):
+    # Left shoulder
     if a == b and x <= b:
         return 1.0
 
+    # Right shoulder
     if c == d and x >= c:
         return 1.0
 
@@ -294,20 +301,20 @@ def trapezoid(x, a, b, c, d):
     return 0.0
 
 
-def label_from_memberships(memberships):
-    best_label = "unknown"
-    best_value = -1.0
+def best_label(membership_dict):
+    selected_label = "unknown"
+    selected_value = -1.0
 
-    for label, value in memberships.items():
-        if value > best_value:
-            best_label = label
-            best_value = value
+    for label, value in membership_dict.items():
+        if value > selected_value:
+            selected_label = label
+            selected_value = value
 
-    return best_label, best_value
+    return selected_label, selected_value
 
 
 # ============================================================
-# TIME WINDOWS
+# Time windows
 # ============================================================
 
 def is_night_offpeak(hour):
@@ -318,15 +325,11 @@ def is_midday_solar_window(hour):
     return 10 <= hour <= 15
 
 
-def is_evening_high_value_window(hour):
-    return 17 <= hour <= 21
-
-
 # ============================================================
-# CONTROLLER
+# Feature calculations
 # ============================================================
 
-def calculate_input_features(row, soc, dynamic_cycle_budget_remaining):
+def calculate_features(row, soc, cycle_budget_remaining):
     load = row["home_load_kw"]
     pv = row["pv_actual_kw"]
     pv_forecast = row["pv_forecast_kw"]
@@ -347,20 +350,23 @@ def calculate_input_features(row, soc, dynamic_cycle_budget_remaining):
         - row["battery_wear_cost_c_per_kwh"]
     )
 
-    # Combined value keeps pricing as the main driver,
-    # but gives extra weight when grid CO2 is high.
-    # 10 c/kWh bonus is added when CO2 is around 1 kg/kWh.
+    # CO2 gives a bonus to V2H when grid emissions are high.
+    # Example: 0.80 kg/kWh gives about 8 c/kWh extra value.
     carbon_bonus = row["grid_co2_kg_per_kwh"] * 10.0
     combined_benefit = financial_benefit + carbon_bonus
 
-    temp_stress = max(row["battery_temp_c"] - 30.0, 0.0) / 15.0
-    budget_stress = 1.0 - dynamic_cycle_budget_remaining
-    wear_stress = min(
-        0.45 * temp_stress
+    temperature_stress = max(row["battery_temp_c"] - 30.0, 0.0) / 15.0
+    budget_stress = 1.0 - cycle_budget_remaining
+    wear_cost_stress = row["battery_wear_cost_c_per_kwh"] / 15.0
+
+    wear_stress = (
+        0.45 * temperature_stress
         + 0.35 * budget_stress
-        + 0.20 * (row["battery_wear_cost_c_per_kwh"] / 15.0),
-        1.0
+        + 0.20 * wear_cost_stress
     )
+
+    if wear_stress > 1.0:
+        wear_stress = 1.0
 
     return {
         "net_load": net_load,
@@ -372,13 +378,17 @@ def calculate_input_features(row, soc, dynamic_cycle_budget_remaining):
         "financial_benefit": financial_benefit,
         "carbon_bonus": carbon_bonus,
         "combined_benefit": combined_benefit,
-        "wear_stress": wear_stress
+        "wear_stress": wear_stress,
     }
 
 
-def fuzzy_v2h_controller(row, soc, dynamic_cycle_budget_remaining):
+# ============================================================
+# Fuzzy V2H controller
+# ============================================================
+
+def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
     hour = row["hour"]
-    features = calculate_input_features(row, soc, dynamic_cycle_budget_remaining)
+    features = calculate_features(row, soc, cycle_budget_remaining)
 
     net_load = features["net_load"]
     soc_margin = features["soc_margin"]
@@ -388,6 +398,10 @@ def fuzzy_v2h_controller(row, soc, dynamic_cycle_budget_remaining):
     wear_stress = features["wear_stress"]
     co2 = row["grid_co2_kg_per_kwh"]
 
+    # -----------------------------
+    # Hard protection rules
+    # -----------------------------
+
     if row["ev_available"] == 0:
         return {
             "decision": "EV_NOT_AVAILABLE",
@@ -395,8 +409,10 @@ def fuzzy_v2h_controller(row, soc, dynamic_cycle_budget_remaining):
             "relay_on": False,
             "fuzzy_score": 0.0,
             "dominant_rule": "Hard rule: EV unavailable",
+            "dominant_strength": 1.0,
+            "dominant_score": 0.0,
             "features": features,
-            "levels": {}
+            "levels": {},
         }
 
     if soc <= SOC_MIN:
@@ -406,8 +422,10 @@ def fuzzy_v2h_controller(row, soc, dynamic_cycle_budget_remaining):
             "relay_on": False,
             "fuzzy_score": 0.0,
             "dominant_rule": "Hard rule: SOC minimum protection",
+            "dominant_strength": 1.0,
+            "dominant_score": 0.0,
             "features": features,
-            "levels": {}
+            "levels": {},
         }
 
     if soc_margin <= 0:
@@ -417,35 +435,42 @@ def fuzzy_v2h_controller(row, soc, dynamic_cycle_budget_remaining):
             "relay_on": False,
             "fuzzy_score": 0.0,
             "dominant_rule": "Hard rule: user trip reserve protection",
+            "dominant_strength": 1.0,
+            "dominant_score": 0.0,
             "features": features,
-            "levels": {}
+            "levels": {},
         }
 
-    if dynamic_cycle_budget_remaining <= 0:
+    if cycle_budget_remaining <= 0:
         return {
             "decision": "CYCLE_BUDGET_PROTECTION",
             "ev_power_kw": 0.0,
             "relay_on": False,
             "fuzzy_score": 0.0,
-            "dominant_rule": "Hard rule: cycling budget exhausted",
+            "dominant_rule": "Hard rule: daily cycle budget exhausted",
+            "dominant_strength": 1.0,
+            "dominant_score": 0.0,
             "features": features,
-            "levels": {}
+            "levels": {},
         }
 
-    # --------------------------------------------------------
-    # Priority 1: PV charging when export value is low and export pressure exists.
-    # Relay OFF because lamp only shows V2H discharge.
-    # --------------------------------------------------------
+    # -----------------------------
+    # Priority 1: PV charging
+    # -----------------------------
+    # Relay remains OFF because the lamp only shows V2H discharge.
+
     if (
         is_midday_solar_window(hour)
         and features["pv_surplus"] > 0.20
         and soc < SOC_MAX
         and row["feed_in_price_c_per_kwh"] <= 1.0
     ):
+        available_battery_room_kwh = ((SOC_MAX - soc) / 100.0) * EV_BATTERY_KWH
+
         charge_power = min(
             EV_MAX_CHARGE_KW,
             features["pv_surplus"],
-            ((SOC_MAX - soc) / 100.0) * EV_BATTERY_KWH
+            available_battery_room_kwh,
         )
 
         return {
@@ -453,34 +478,43 @@ def fuzzy_v2h_controller(row, soc, dynamic_cycle_budget_remaining):
             "ev_power_kw": -charge_power,
             "relay_on": False,
             "fuzzy_score": -85.0,
-            "dominant_rule": "PV surplus + low feed-in value + export constraint",
+            "dominant_rule": "PV surplus + low feed-in value + export limit pressure",
+            "dominant_strength": 1.0,
+            "dominant_score": -85.0,
             "features": features,
-            "levels": {}
+            "levels": {},
         }
 
-    # --------------------------------------------------------
-    # Priority 2: Night reserve charging if SOC is below next trip reserve.
-    # Relay OFF because this is charging, not V2H.
-    # --------------------------------------------------------
+    # -----------------------------
+    # Priority 2: night reserve charging
+    # -----------------------------
+    # Relay remains OFF because this is charging, not discharge.
+
     if is_night_offpeak(hour) and soc < row["trip_reserve_soc"]:
         required_energy_kwh = ((row["trip_reserve_soc"] - soc) / 100.0) * EV_BATTERY_KWH
-        charge_power = min(EV_MAX_CHARGE_KW, required_energy_kwh)
+
+        charge_power = min(
+            EV_MAX_CHARGE_KW,
+            required_energy_kwh,
+        )
 
         return {
             "decision": "NIGHT_RESERVE_CHARGING",
             "ev_power_kw": -charge_power,
             "relay_on": False,
             "fuzzy_score": -60.0,
-            "dominant_rule": "Night off-peak charging to user reserve",
+            "dominant_rule": "Night off-peak charging to meet user reserve",
+            "dominant_strength": 1.0,
+            "dominant_score": -60.0,
             "features": features,
-            "levels": {}
+            "levels": {},
         }
 
-    # --------------------------------------------------------
-    # Fuzzification for discharge decision.
-    # --------------------------------------------------------
+    # -----------------------------
+    # Fuzzification
+    # -----------------------------
 
-    net_load_membership = {
+    net_load_mf = {
         "surplus": trapezoid(net_load, -5.0, -5.0, -0.8, -0.1),
         "balanced": triangle(net_load, -0.5, 0.0, 0.5),
         "low_deficit": triangle(net_load, 0.2, 1.2, 2.5),
@@ -488,7 +522,7 @@ def fuzzy_v2h_controller(row, soc, dynamic_cycle_budget_remaining):
         "high_deficit": trapezoid(net_load, 3.2, 4.0, 6.0, 6.0),
     }
 
-    benefit_membership = {
+    benefit_mf = {
         "negative": trapezoid(combined_benefit, -50.0, -50.0, 0.0, 8.0),
         "low": triangle(combined_benefit, 5.0, 15.0, 25.0),
         "medium": triangle(combined_benefit, 20.0, 35.0, 50.0),
@@ -496,112 +530,112 @@ def fuzzy_v2h_controller(row, soc, dynamic_cycle_budget_remaining):
         "very_high": trapezoid(combined_benefit, 70.0, 85.0, 120.0, 120.0),
     }
 
-    soc_margin_membership = {
+    soc_margin_mf = {
         "low": triangle(soc_margin, 0.0, 10.0, 25.0),
         "medium": triangle(soc_margin, 15.0, 30.0, 45.0),
         "high": trapezoid(soc_margin, 35.0, 50.0, 80.0, 80.0),
     }
 
-    export_pressure_membership = {
+    export_pressure_mf = {
         "none": trapezoid(export_pressure, 0.0, 0.0, 0.05, 0.20),
         "low": triangle(export_pressure, 0.10, 0.40, 0.80),
         "high": trapezoid(export_pressure, 0.60, 1.00, 4.00, 4.00),
     }
 
-    forecast_risk_membership = {
+    forecast_risk_mf = {
         "low": trapezoid(forecast_risk, 0.0, 0.0, 0.05, 0.15),
         "medium": triangle(forecast_risk, 0.10, 0.25, 0.45),
         "high": trapezoid(forecast_risk, 0.35, 0.55, 1.00, 1.00),
     }
 
-    wear_stress_membership = {
+    wear_stress_mf = {
         "low": trapezoid(wear_stress, 0.0, 0.0, 0.20, 0.40),
         "medium": triangle(wear_stress, 0.25, 0.50, 0.75),
         "high": trapezoid(wear_stress, 0.65, 0.80, 1.00, 1.00),
     }
 
-    co2_membership = {
+    co2_mf = {
         "low": trapezoid(co2, 0.00, 0.00, 0.35, 0.45),
         "medium": triangle(co2, 0.35, 0.55, 0.75),
         "high": trapezoid(co2, 0.65, 0.75, 1.20, 1.20),
     }
 
     levels = {
-        "net_load_level": label_from_memberships(net_load_membership)[0],
-        "benefit_level": label_from_memberships(benefit_membership)[0],
-        "soc_margin_level": label_from_memberships(soc_margin_membership)[0],
-        "export_pressure_level": label_from_memberships(export_pressure_membership)[0],
-        "forecast_risk_level": label_from_memberships(forecast_risk_membership)[0],
-        "wear_stress_level": label_from_memberships(wear_stress_membership)[0],
-        "co2_level": label_from_memberships(co2_membership)[0],
+        "net_load_level": best_label(net_load_mf)[0],
+        "benefit_level": best_label(benefit_mf)[0],
+        "soc_margin_level": best_label(soc_margin_mf)[0],
+        "export_pressure_level": best_label(export_pressure_mf)[0],
+        "forecast_risk_level": best_label(forecast_risk_mf)[0],
+        "wear_stress_level": best_label(wear_stress_mf)[0],
+        "co2_level": best_label(co2_mf)[0],
     }
 
-    # --------------------------------------------------------
-    # Fuzzy rule base.
+    # -----------------------------
+    # Fuzzy rule base
+    # -----------------------------
     # Score:
     # 0   = hold
-    # 55  = weak V2H
-    # 75  = medium V2H
+    # 60  = weak V2H
+    # 80  = medium V2H
     # 100 = strong V2H
-    # --------------------------------------------------------
 
     rules = []
 
     rules.append((
         max(
-            benefit_membership["negative"],
-            wear_stress_membership["high"],
-            forecast_risk_membership["high"] * soc_margin_membership["low"],
-            net_load_membership["balanced"],
-            net_load_membership["surplus"]
+            benefit_mf["negative"],
+            wear_stress_mf["high"],
+            forecast_risk_mf["high"] * soc_margin_mf["low"],
+            net_load_mf["balanced"],
+            net_load_mf["surplus"],
         ),
         0.0,
-        "Hold: poor benefit / high wear / high forecast risk / no deficit"
+        "Hold: poor benefit / high wear / forecast risk / no deficit",
     ))
 
     rules.append((
         min(
-            net_load_membership["high_deficit"],
-            benefit_membership["very_high"],
-            soc_margin_membership["high"],
-            co2_membership["high"],
-            wear_stress_membership["low"]
+            net_load_mf["high_deficit"],
+            benefit_mf["very_high"],
+            soc_margin_mf["high"],
+            co2_mf["high"],
+            wear_stress_mf["low"],
         ),
         100.0,
-        "Strong V2H: high deficit + very high benefit + high CO2 + safe SOC"
+        "Strong V2H: high deficit + very high benefit + high CO2 + safe SOC",
     ))
 
     rules.append((
         min(
-            net_load_membership["medium_deficit"],
-            max(benefit_membership["high"], benefit_membership["very_high"]),
-            max(soc_margin_membership["medium"], soc_margin_membership["high"]),
-            max(co2_membership["medium"], co2_membership["high"])
+            net_load_mf["medium_deficit"],
+            max(benefit_mf["high"], benefit_mf["very_high"]),
+            max(soc_margin_mf["medium"], soc_margin_mf["high"]),
+            max(co2_mf["medium"], co2_mf["high"]),
         ),
         80.0,
-        "Medium V2H: medium deficit + high value + medium/high CO2"
+        "Medium V2H: medium deficit + high value + medium/high CO2",
     ))
 
     rules.append((
         min(
-            net_load_membership["low_deficit"],
-            benefit_membership["high"],
-            soc_margin_membership["high"],
-            co2_membership["high"]
+            net_load_mf["low_deficit"],
+            benefit_mf["high"],
+            soc_margin_mf["high"],
+            co2_mf["high"],
         ),
         60.0,
-        "Weak V2H: low deficit but high value and high CO2"
+        "Weak V2H: low deficit but high value and high CO2",
     ))
 
     rules.append((
         min(
             row["network_stress_level"],
-            max(net_load_membership["medium_deficit"], net_load_membership["high_deficit"]),
-            max(benefit_membership["high"], benefit_membership["very_high"]),
-            max(soc_margin_membership["medium"], soc_margin_membership["high"])
+            max(net_load_mf["medium_deficit"], net_load_mf["high_deficit"]),
+            max(benefit_mf["high"], benefit_mf["very_high"]),
+            max(soc_margin_mf["medium"], soc_margin_mf["high"]),
         ),
         85.0,
-        "Network support V2H: stressed network + valuable import reduction"
+        "Network support V2H: stressed network + valuable import reduction",
     ))
 
     numerator = 0.0
@@ -620,15 +654,24 @@ def fuzzy_v2h_controller(row, soc, dynamic_cycle_budget_remaining):
             dominant_score = score
             dominant_rule = rule_name
 
-    fuzzy_score = 0.0 if denominator == 0.0 else numerator / denominator
+    if denominator == 0.0:
+        fuzzy_score = 0.0
+    else:
+        fuzzy_score = numerator / denominator
+
+    # -----------------------------
+    # Final V2H decision
+    # -----------------------------
 
     if fuzzy_score >= V2H_SCORE_THRESHOLD and net_load > 0:
         if fuzzy_score >= 85.0:
             ev_power = min(EV_MAX_DISCHARGE_KW, net_load)
             decision = "STRONG_NET_BENEFIT_CO2_V2H"
+
         elif fuzzy_score >= 70.0:
             ev_power = min(2.2, net_load)
             decision = "MEDIUM_NET_BENEFIT_CO2_V2H"
+
         else:
             ev_power = min(1.2, net_load)
             decision = "WEAK_NET_BENEFIT_CO2_V2H"
@@ -649,15 +692,18 @@ def fuzzy_v2h_controller(row, soc, dynamic_cycle_budget_remaining):
         "dominant_strength": dominant_strength,
         "dominant_score": dominant_score,
         "features": features,
-        "levels": levels
+        "levels": levels,
     }
 
 
 # ============================================================
-# SOC UPDATE
+# SOC update
 # ============================================================
 
 def update_soc(soc, ev_power_kw):
+    # ev_power > 0 means discharging
+    # ev_power < 0 means charging
+
     soc_change = (ev_power_kw / EV_BATTERY_KWH) * 100.0
     new_soc = soc - soc_change
 
@@ -671,10 +717,10 @@ def update_soc(soc, ev_power_kw):
 
 
 # ============================================================
-# SUMMARY MATRIX
+# Summary matrix
 # ============================================================
 
-def calculate_export_and_curtailment(grid_power_kw, export_limit_kw):
+def export_and_curtailment(grid_power_kw, export_limit_kw):
     export_candidate = max(-grid_power_kw, 0.0)
     exported = min(export_candidate, export_limit_kw)
     curtailed = max(export_candidate - export_limit_kw, 0.0)
@@ -722,28 +768,28 @@ def create_summary_matrix(results):
         baseline_imp = max(baseline_grid, 0.0)
         managed_imp = max(managed_grid, 0.0)
 
-        base_export, base_curtail = calculate_export_and_curtailment(
+        baseline_exp, baseline_curt = export_and_curtailment(
             baseline_grid,
-            export_limit
+            export_limit,
         )
 
-        managed_exp, managed_curtail = calculate_export_and_curtailment(
+        managed_exp, managed_curt = export_and_curtailment(
             managed_grid,
-            export_limit
+            export_limit,
         )
 
         baseline_import += baseline_imp
         managed_import += managed_imp
 
-        baseline_export += base_export
+        baseline_export += baseline_exp
         managed_export += managed_exp
 
-        baseline_curtailment += base_curtail
-        managed_curtailment += managed_curtail
+        baseline_curtailment += baseline_curt
+        managed_curtailment += managed_curt
 
         baseline_bill += (
             baseline_imp * (row["import_price_c_per_kwh"] / 100.0)
-            - base_export * (row["feed_in_price_c_per_kwh"] / 100.0)
+            - baseline_exp * (row["feed_in_price_c_per_kwh"] / 100.0)
         )
 
         managed_bill_before_wear += (
@@ -775,10 +821,7 @@ def create_summary_matrix(results):
         if row["soc_after_percent"] < row["trip_reserve_soc"]:
             reserve_violations += 1
 
-        if (
-            row["decision"] == "HOLD"
-            and row["forecast_risk_level"] == "high"
-        ):
+        if row["decision"] == "HOLD" and row.get("forecast_risk_level", "unknown") == "high":
             forecast_risk_hold_events += 1
 
     managed_bill_after_wear = managed_bill_before_wear + battery_wear_cost
@@ -789,15 +832,18 @@ def create_summary_matrix(results):
     emissions_avoided = baseline_emissions - managed_emissions
 
     peak_reduction = baseline_peak_import - managed_peak_import
-    peak_reduction_percent = (
-        (peak_reduction / baseline_peak_import) * 100.0
-        if baseline_peak_import > 0
-        else 0.0
-    )
+
+    if baseline_peak_import > 0:
+        peak_reduction_percent = (peak_reduction / baseline_peak_import) * 100.0
+    else:
+        peak_reduction_percent = 0.0
 
     curtailment_reduction = baseline_curtailment - managed_curtailment
 
-    relay_on_hours = sum(1 for row in results if row["relay_state"] == "ON")
+    relay_on_hours = sum(
+        1 for row in results
+        if row["relay_state"] == "ON"
+    )
 
     relay_on_periods = [
         f"{row['hour']:02d}:00"
@@ -811,40 +857,51 @@ def create_summary_matrix(results):
     cycle_budget_used = ev_discharge_energy / DAILY_DISCHARGE_BUDGET_KWH
 
     summary = {
-        "Scenario": "Dynamic price, export limit, CO2 and battery wear aware V2H",
+        "Scenario": "Harshil's scenario - dynamic price, export limit, CO2 and battery wear aware V2H",
+
         "Total home load energy (kWh)": round(total_home_load, 2),
         "Total PV generation (kWh)": round(total_pv, 2),
+
         "Baseline grid import (kWh)": round(baseline_import, 2),
         "Managed grid import (kWh)": round(managed_import, 2),
         "Grid import reduction (kWh)": round(baseline_import - managed_import, 2),
+
         "Baseline grid export (kWh)": round(baseline_export, 2),
         "Managed grid export (kWh)": round(managed_export, 2),
+
         "Baseline PV curtailment (kWh)": round(baseline_curtailment, 2),
         "Managed PV curtailment (kWh)": round(managed_curtailment, 2),
         "PV curtailment reduction (kWh)": round(curtailment_reduction, 2),
+
         "EV discharge energy (kWh)": round(ev_discharge_energy, 2),
         "EV charge energy total (kWh)": round(ev_charge_energy, 2),
         "PV charging energy (kWh)": round(pv_charge_energy, 2),
         "Grid charging energy (kWh)": round(grid_charge_energy, 2),
+
         "Baseline electricity bill ($)": round(baseline_bill, 2),
         "Managed bill before wear ($)": round(managed_bill_before_wear, 2),
         "Battery wear cost ($)": round(battery_wear_cost, 2),
         "Managed bill after wear ($)": round(managed_bill_after_wear, 2),
         "Gross bill saving before wear ($)": round(gross_bill_saving, 2),
         "Net bill saving after wear ($)": round(net_bill_saving, 2),
+
         "Baseline CO2 emissions (kg CO2-e)": round(baseline_emissions, 2),
         "Managed CO2 emissions (kg CO2-e)": round(managed_emissions, 2),
         "Net CO2 emissions avoided (kg CO2-e)": round(emissions_avoided, 2),
+
         "Baseline peak import (kW)": round(baseline_peak_import, 2),
         "Managed peak import (kW)": round(managed_peak_import, 2),
         "Peak import reduction (kW)": round(peak_reduction, 2),
         "Peak import reduction (%)": round(peak_reduction_percent, 1),
+
         "Initial SOC (%)": round(INITIAL_SOC, 2),
         "Final SOC (%)": round(final_soc, 2),
         "Minimum SOC (%)": round(minimum_soc, 2),
         "Reserve violation hours": reserve_violations,
+
         "Relay ON hours": relay_on_hours,
         "Relay ON periods": ", ".join(relay_on_periods),
+
         "Cycle budget used (%)": round(cycle_budget_used * 100.0, 1),
         "Forecast-risk hold events": forecast_risk_hold_events,
     }
@@ -853,12 +910,12 @@ def create_summary_matrix(results):
 
 
 def print_summary_matrix(summary):
-    print("\n================ Harshil's SCENARIO SUMMARY MATRIX ================")
+    print("\n================ HARSHIL'S SUMMARY MATRIX ================")
 
     for key, value in summary.items():
-        print(f"{key:52s}: {value}")
+        print(f"{key:55s}: {value}")
 
-    print("===========================================================")
+    print("==========================================================")
 
 
 def save_summary_matrix(summary):
@@ -871,23 +928,22 @@ def save_summary_matrix(summary):
 
 
 # ============================================================
-# LOGGING HELPERS
+# Logging helpers
 # ============================================================
 
 def save_hourly_log(results):
-    fieldnames = list(results[0].keys())
-
     with open(HOURLY_LOG_FILE, "w", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer = csv.DictWriter(file, fieldnames=list(results[0].keys()))
         writer.writeheader()
         writer.writerows(results)
 
 
 def save_rule_trace(rule_trace):
-    fieldnames = list(rule_trace[0].keys())
+    if len(rule_trace) == 0:
+        return
 
     with open(RULE_TRACE_FILE, "w", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer = csv.DictWriter(file, fieldnames=list(rule_trace[0].keys()))
         writer.writeheader()
         writer.writerows(rule_trace)
 
@@ -900,7 +956,7 @@ def save_event_log(event_log):
         "decision",
         "relay_state",
         "ev_power_kw",
-        "soc_percent"
+        "soc_percent",
     ]
 
     with open(EVENT_LOG_FILE, "w", newline="") as file:
@@ -910,7 +966,7 @@ def save_event_log(event_log):
 
 
 # ============================================================
-# MAIN PROGRAM
+# Main program
 # ============================================================
 
 def main():
@@ -920,6 +976,7 @@ def main():
     input_rows = load_input_data()
 
     ev_soc = INITIAL_SOC
+    cycle_budget_remaining = 1.0
 
     results = []
     rule_trace = []
@@ -928,10 +985,9 @@ def main():
     previous_decision = None
     previous_relay_state = "OFF"
 
-    dynamic_cycle_budget_remaining = 1.0
-
     print("===================================================")
-    print(" Harshil's SCENARIO : DYNAMIC PRICE + EXPORT LIMIT + CO2 V2H")
+    print(" HARSHIL'S SCENARIO")
+    print(" Dynamic price + export limit + CO2 + battery wear")
     print(" Relay ON  = V2H discharge active")
     print(" Relay OFF = hold / charging / protection")
     print(" 24 simulated hours = 5 real minutes")
@@ -942,19 +998,21 @@ def main():
             hour = row["hour"]
             soc_before = ev_soc
 
-            result = fuzzy_v2h_controller(
+            controller_output = fuzzy_v2h_controller(
                 row,
                 ev_soc,
-                dynamic_cycle_budget_remaining
+                cycle_budget_remaining,
             )
 
-            decision = result["decision"]
-            ev_power = result["ev_power_kw"]
-            relay_on = result["relay_on"]
-            fuzzy_score = result["fuzzy_score"]
-            dominant_rule = result["dominant_rule"]
-            features = result["features"]
-            levels = result["levels"]
+            decision = controller_output["decision"]
+            ev_power = controller_output["ev_power_kw"]
+            relay_on = controller_output["relay_on"]
+            fuzzy_score = controller_output["fuzzy_score"]
+            dominant_rule = controller_output["dominant_rule"]
+            dominant_strength = controller_output.get("dominant_strength", 0.0)
+            dominant_score = controller_output.get("dominant_score", 0.0)
+            features = controller_output["features"]
+            levels = controller_output["levels"]
 
             baseline_grid = features["net_load"]
             managed_grid = baseline_grid - ev_power
@@ -970,9 +1028,10 @@ def main():
             soc_after = ev_soc
 
             if ev_power > 0:
-                dynamic_cycle_budget_remaining -= ev_power / DAILY_DISCHARGE_BUDGET_KWH
-                if dynamic_cycle_budget_remaining < 0.0:
-                    dynamic_cycle_budget_remaining = 0.0
+                cycle_budget_remaining -= ev_power / DAILY_DISCHARGE_BUDGET_KWH
+
+                if cycle_budget_remaining < 0.0:
+                    cycle_budget_remaining = 0.0
 
             print(
                 f"{hour:02d}:00 | "
@@ -993,44 +1052,43 @@ def main():
             hourly_row = {
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
                 "hour": hour,
+
                 "home_load_kw": row["home_load_kw"],
                 "pv_actual_kw": row["pv_actual_kw"],
                 "pv_forecast_kw": row["pv_forecast_kw"],
+
                 "baseline_grid_kw": round(baseline_grid, 3),
                 "managed_grid_kw": round(managed_grid, 3),
+
                 "import_price_c_per_kwh": row["import_price_c_per_kwh"],
                 "feed_in_price_c_per_kwh": row["feed_in_price_c_per_kwh"],
                 "export_limit_kw": row["export_limit_kw"],
                 "network_stress_level": row["network_stress_level"],
                 "grid_co2_kg_per_kwh": row["grid_co2_kg_per_kwh"],
+
                 "battery_temp_c": row["battery_temp_c"],
                 "battery_wear_cost_c_per_kwh": row["battery_wear_cost_c_per_kwh"],
-                "cycle_budget_remaining": round(dynamic_cycle_budget_remaining, 3),
+                "cycle_budget_remaining": round(cycle_budget_remaining, 3),
+
                 "ev_available": row["ev_available"],
                 "trip_reserve_soc": row["trip_reserve_soc"],
+                "critical_load_level": row["critical_load_level"],
+
                 "soc_before_percent": round(soc_before, 2),
                 "soc_after_percent": round(soc_after, 2),
                 "soc_margin_percent": round(features["soc_margin"], 2),
+
                 "financial_benefit_c_per_kwh": round(features["financial_benefit"], 2),
                 "carbon_bonus_c_per_kwh": round(features["carbon_bonus"], 2),
                 "combined_benefit_c_per_kwh": round(features["combined_benefit"], 2),
+
                 "pv_surplus_kw": round(features["pv_surplus"], 3),
                 "export_pressure_kw": round(features["export_pressure"], 3),
                 "forecast_error_kw": round(features["forecast_error_kw"], 3),
                 "forecast_risk": round(features["forecast_risk"], 3),
                 "wear_stress": round(features["wear_stress"], 3),
-                "fuzzy_score": round(fuzzy_score, 2),
-                "dominant_rule": dominant_rule,
-                "decision": decision,
-                "ev_power_kw": round(ev_power, 3),
-                "relay_state": relay_state
-            }
 
-            results.append(hourly_row)
-
-            trace_row = {
-                "timestamp": datetime.now().isoformat(timespec="seconds"),
-                "hour": hour,
+                # These fields fix the previous KeyError.
                 "net_load_level": levels.get("net_load_level", "hard_rule"),
                 "benefit_level": levels.get("benefit_level", "hard_rule"),
                 "soc_margin_level": levels.get("soc_margin_level", "hard_rule"),
@@ -1038,13 +1096,36 @@ def main():
                 "forecast_risk_level": levels.get("forecast_risk_level", "hard_rule"),
                 "wear_stress_level": levels.get("wear_stress_level", "hard_rule"),
                 "co2_level": levels.get("co2_level", "hard_rule"),
-                "dominant_rule": dominant_rule,
+
                 "fuzzy_score": round(fuzzy_score, 2),
+                "dominant_rule": dominant_rule,
+                "dominant_strength": round(dominant_strength, 3),
+                "dominant_score": round(dominant_score, 2),
+
                 "decision": decision,
-                "relay_state": relay_state
+                "ev_power_kw": round(ev_power, 3),
+                "relay_state": relay_state,
             }
 
-            rule_trace.append(trace_row)
+            results.append(hourly_row)
+
+            rule_trace.append({
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "hour": hour,
+                "net_load_level": hourly_row["net_load_level"],
+                "benefit_level": hourly_row["benefit_level"],
+                "soc_margin_level": hourly_row["soc_margin_level"],
+                "export_pressure_level": hourly_row["export_pressure_level"],
+                "forecast_risk_level": hourly_row["forecast_risk_level"],
+                "wear_stress_level": hourly_row["wear_stress_level"],
+                "co2_level": hourly_row["co2_level"],
+                "dominant_rule": dominant_rule,
+                "dominant_strength": round(dominant_strength, 3),
+                "dominant_score": round(dominant_score, 2),
+                "fuzzy_score": round(fuzzy_score, 2),
+                "decision": decision,
+                "relay_state": relay_state,
+            })
 
             if decision != previous_decision or relay_state != previous_relay_state:
                 event_log.append({
@@ -1054,7 +1135,7 @@ def main():
                     "decision": decision,
                     "relay_state": relay_state,
                     "ev_power_kw": round(ev_power, 3),
-                    "soc_percent": round(soc_before, 2)
+                    "soc_percent": round(soc_before, 2),
                 })
 
             previous_decision = decision
@@ -1086,7 +1167,7 @@ def main():
         else:
             print("No results recorded.")
 
-        print("Harshil's Scenario complete.")
+        print("Harshil's scenario complete.")
 
 
 if __name__ == "__main__":
