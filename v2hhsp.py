@@ -1,4 +1,4 @@
-ffrom time import sleep
+from time import sleep
 from datetime import datetime
 import csv
 import os
