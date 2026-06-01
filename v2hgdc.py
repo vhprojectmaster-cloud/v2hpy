@@ -215,5 +215,5 @@ def main():
         print(f"Log saved to: {log_file}")
 
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     main()
