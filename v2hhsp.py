@@ -1,4 +1,4 @@
-from time import sleep
+ffrom time import sleep
 from datetime import datetime
 import csv
 import os
@@ -23,8 +23,8 @@ except ImportError:
 
 
 # ============================================================
-# THESIS SCENARIO:
-# V2H WITH SIMULATED CHARGING + BATTERY-WEAR-AWARE FUZZY CONTROL
+# SCENARIO 2: HARSHIL'S SCENARIO
+# V2H WITH SIMULATED CHARGING + Price, TOU , CO2 EMISSION AWARE AND BATTERY-WEAR-AWARE FUZZY CONTROL
 # ============================================================
 #
 # Scenario design:
@@ -102,7 +102,6 @@ except ImportError:
 #      Literature commonly uses EV SOC, availability, minimum SOC,
 #      maximum charge/discharge power, user preference and EV
 #      charge/discharge power as HEMS inputs/outputs.
-#      See uploaded V2H and HEMS papers used in this project.
 #
 # ============================================================
 
@@ -116,21 +115,21 @@ relay = OutputDevice(RELAY_GPIO, active_high=True, initial_value=False)
 
 
 # ============================================================
-# FOLDER AND FILE PATHS
+# SCENARIO 2 HARSHIL FILE PATHS
 # ============================================================
 
-DATA_DIR = "data"
-LOG_DIR = "logs"
+DATA_DIR = os.path.join("data", "scenario2_harshil_files")
+LOG_DIR = os.path.join("logs", "scenario2_harshil_files")
 
-ENERGY_PROFILE_FILE = os.path.join(DATA_DIR, "thesis_energy_profile.csv")
-MARKET_NETWORK_FILE = os.path.join(DATA_DIR, "thesis_market_network.csv")
-BATTERY_PROFILE_FILE = os.path.join(DATA_DIR, "thesis_battery_profile.csv")
+ENERGY_PROFILE_FILE = os.path.join(DATA_DIR, "energy_profile.csv")
+MARKET_NETWORK_FILE = os.path.join(DATA_DIR, "market_network_profile.csv")
+BATTERY_PROFILE_FILE = os.path.join(DATA_DIR, "battery_profile.csv")
 
-HOURLY_LOG_FILE = os.path.join(LOG_DIR, "thesis_hourly_log.csv")
-SUMMARY_MATRIX_FILE = os.path.join(LOG_DIR, "thesis_summary_matrix.csv")
-RULE_TRACE_FILE = os.path.join(LOG_DIR, "thesis_rule_trace.csv")
-EVENT_LOG_FILE = os.path.join(LOG_DIR, "thesis_event_log.csv")
-SOURCE_REFERENCE_FILE = os.path.join(LOG_DIR, "thesis_data_source_references.csv")
+HOURLY_LOG_FILE = os.path.join(LOG_DIR, "hourly_log.csv")
+SUMMARY_MATRIX_FILE = os.path.join(LOG_DIR, "summary_matrix.csv")
+RULE_TRACE_FILE = os.path.join(LOG_DIR, "rule_trace.csv")
+EVENT_LOG_FILE = os.path.join(LOG_DIR, "event_log.csv")
+SOURCE_REFERENCE_FILE = os.path.join(LOG_DIR, "data_source_references.csv")
 
 
 # ============================================================
@@ -152,28 +151,20 @@ PV_REFERENCE_KW = 4.0
 
 HOUR_DELAY_SECONDS = 12.5
 
-# Controller threshold
 V2H_SCORE_THRESHOLD = 55.0
 
-# Daily V2H energy budget to avoid unrealistic battery cycling
 DAILY_DISCHARGE_BUDGET_KWH = 16.0
 
-# Notional control weighting for carbon and grid stress.
-# These are not electricity market prices. They are controller weights.
 CARBON_VALUE_C_PER_KG_CO2 = 10.0
 GRID_STRESS_VALUE_C_PER_KWH = 20.0
 
-# Battery aging model assumptions for summary only.
-# Simplified equivalent-full-cycle model:
-# EOL reference = 75% remaining capacity.
-# Assumed cycle life to EOL = 3000 equivalent full cycles.
 BATTERY_EOL_RETAINED_CAPACITY_PERCENT = 75.0
 ASSUMED_CYCLE_LIFE_EFC = 3000.0
+
 BASE_CAPACITY_FADE_PERCENT_PER_EFC = (
     (100.0 - BATTERY_EOL_RETAINED_CAPACITY_PERCENT) / ASSUMED_CYCLE_LIFE_EFC
 )
 
-# Always overwrite demo CSVs so the intended thesis scenario runs correctly.
 OVERWRITE_INPUT_CSVS = True
 
 
@@ -240,25 +231,20 @@ def create_input_csvs():
             [5, 0.65, 0.05, 0.10, 1, 55, 0.30, "none"],
             [6, 1.05, 0.25, 0.35, 1, 55, 0.40, "none"],
 
-            # Commuter away period
             [7, 1.45, 0.65, 0.75, 0, 60, 0.50, "none"],
             [8, 1.30, 1.25, 1.40, 0, 60, 0.40, "none"],
             [9, 1.10, 2.10, 2.30, 0, 60, 0.30, "none"],
 
-            # EV returns, PV is strong, but controller waits for planned event
             [10, 1.25, 3.25, 3.40, 1, 55, 0.30, "none"],
             [11, 1.50, 3.85, 4.00, 1, 55, 0.40, "none"],
             [12, 1.70, 4.00, 4.10, 1, 55, 0.45, "none"],
             [13, 1.80, 3.55, 3.60, 1, 55, 0.50, "none"],
 
-            # 2-hour afternoon V2H support event
             [14, 2.90, 1.35, 1.50, 1, 55, 0.70, "afternoon_v2h"],
             [15, 3.10, 1.10, 1.20, 1, 55, 0.80, "afternoon_v2h"],
 
-            # Simulated charging between afternoon V2H and evening peak V2H
             [16, 1.35, 2.45, 2.30, 1, 55, 0.30, "between_event_charging"],
 
-            # 4-hour evening V2H support event, 17:00–21:00
             [17, 3.00, 0.55, 0.55, 1, 55, 0.80, "evening_v2h"],
             [18, 3.60, 0.00, 0.00, 1, 55, 1.00, "evening_v2h"],
             [19, 3.50, 0.00, 0.00, 1, 55, 1.00, "evening_v2h"],
@@ -288,7 +274,6 @@ def create_input_csvs():
             # hour, import_price_c_per_kwh, feed_in_price_c_per_kwh,
             # export_limit_kw, grid_stress_level, grid_co2_kg_per_kwh
 
-            # Off-peak retail price based on CitiPower VDO 2025–26: 22.06 c/kWh
             [0, 22.06, 1.00, 5.0, 0.20, 0.72],
             [1, 22.06, 1.00, 5.0, 0.20, 0.72],
             [2, 22.06, 1.00, 5.0, 0.20, 0.71],
@@ -297,7 +282,6 @@ def create_input_csvs():
             [5, 22.06, 1.00, 5.0, 0.30, 0.69],
             [6, 22.06, 1.00, 5.0, 0.40, 0.65],
 
-            # Morning / midday low feed-in and lower CO2 because PV is strong
             [7, 22.06, 0.00, 4.0, 0.45, 0.58],
             [8, 22.06, 0.00, 3.0, 0.45, 0.50],
             [9, 22.06, 0.00, 2.0, 0.50, 0.42],
@@ -306,10 +290,8 @@ def create_input_csvs():
             [12, 22.06, 0.00, 0.8, 0.70, 0.25],
             [13, 22.06, 0.00, 0.8, 0.65, 0.30],
 
-            # Afternoon support period, modelled stress rises
             [14, 22.06, 0.00, 1.0, 0.70, 0.55],
 
-            # Peak retail price based on CitiPower VDO 2025–26: 36.33 c/kWh
             [15, 36.33, 6.57, 1.5, 0.80, 0.65],
             [16, 36.33, 6.57, 1.5, 0.75, 0.70],
             [17, 36.33, 6.57, 2.0, 0.88, 0.78],
@@ -317,7 +299,6 @@ def create_input_csvs():
             [19, 36.33, 6.57, 2.0, 0.95, 0.86],
             [20, 36.33, 6.57, 2.0, 0.90, 0.82],
 
-            # Off-peak again after 9 pm
             [21, 22.06, 1.00, 4.0, 0.55, 0.75],
             [22, 22.06, 1.00, 5.0, 0.35, 0.72],
             [23, 22.06, 1.00, 5.0, 0.25, 0.70],
@@ -544,26 +525,8 @@ def calculate_features(row, soc, cycle_budget_remaining):
 # ============================================================
 # FUZZY V2H CONTROLLER
 # ============================================================
-#
-# Fuzzy inputs used:
-#   1. net_load
-#   2. value_signal
-#   3. soc_margin
-#   4. grid_stress_level
-#   5. battery_wear_stress
-#
-# Non-fuzzy hard protections:
-#   - EV availability
-#   - SOC minimum
-#   - trip reserve SOC
-#   - daily discharge budget
-#   - control window permission
-#   - charging priority
-#
-# ============================================================
 
 def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
-    hour = row["hour"]
     control_window = row["control_window"]
 
     features = calculate_features(row, soc, cycle_budget_remaining)
@@ -573,10 +536,6 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
     soc_margin = features["soc_margin"]
     grid_stress = row["grid_stress_level"]
     battery_wear_stress = features["battery_wear_stress"]
-
-    # -----------------------------
-    # Hard protection rules
-    # -----------------------------
 
     if row["ev_available"] == 0:
         return {
@@ -630,12 +589,6 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
             "levels": {},
         }
 
-    # -----------------------------
-    # Simulated charging mode
-    # -----------------------------
-    # Charging is simulated only.
-    # Relay stays OFF because the relay/lamp is used to show V2H discharge.
-
     if control_window == "between_event_charging":
         available_battery_room_kwh = ((SOC_MAX - soc) / 100.0) * EV_BATTERY_KWH
 
@@ -657,10 +610,6 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
                 "features": features,
                 "levels": {},
             }
-
-    # -----------------------------
-    # Fuzzification
-    # -----------------------------
 
     net_load_mf = {
         "surplus": trapezoid(net_load, -5.0, -5.0, -0.8, -0.1),
@@ -700,15 +649,6 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
         "grid_stress_level_fuzzy": best_label(grid_stress_mf)[0],
         "battery_wear_level": best_label(battery_wear_mf)[0],
     }
-
-    # -----------------------------
-    # Fuzzy rule base
-    # -----------------------------
-    # Output score:
-    #   0   = hold
-    #   60  = minor/weak V2H
-    #   80  = medium V2H
-    #   100 = major V2H
 
     rules = []
 
@@ -800,10 +740,6 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
 
     fuzzy_score = numerator / denominator if denominator != 0 else 0.0
 
-    # -----------------------------
-    # User-approved control window
-    # -----------------------------
-
     v2h_window_allowed = control_window in ["afternoon_v2h", "evening_v2h"]
 
     if not v2h_window_allowed:
@@ -818,10 +754,6 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
             "features": features,
             "levels": levels,
         }
-
-    # -----------------------------
-    # Final discharge power decision
-    # -----------------------------
 
     max_energy_allowed_by_soc_kwh = max(
         ((soc - row["trip_reserve_soc"]) / 100.0) * EV_BATTERY_KWH,
@@ -886,9 +818,6 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
 # ============================================================
 
 def update_soc(soc, ev_power_kw):
-    # ev_power_kw > 0 means V2H discharge to home.
-    # ev_power_kw < 0 means simulated charging.
-
     if ev_power_kw > 0:
         battery_energy_used_kwh = ev_power_kw / DISCHARGE_EFFICIENCY
         soc_change = (battery_energy_used_kwh / EV_BATTERY_KWH) * 100.0
@@ -1116,6 +1045,9 @@ def create_summary_matrix(results):
             "note": note,
         })
 
+    add("SCENARIO 2 HARSHIL OVERVIEW", "Scenario name", "Scenario 2: Harshil's Scenario", "-", "Battery-wear-aware V2H with simulated charging")
+    add("SCENARIO 2 HARSHIL OVERVIEW", "Data/log folder name", "scenario2_harshil_files", "-", "All Scenario 2 Harshil files are saved in this folder")
+
     add("DATA & MODELLING SOURCES", "Load/PV profile basis", "Ausgrid/CSIRO NEAR", "-", "Hourly values are modelled from real household + rooftop PV profile shapes")
     add("DATA & MODELLING SOURCES", "PV forecast basis", "AEMO ASEFS", "-", "PV forecast values are representative forecast estimates")
     add("DATA & MODELLING SOURCES", "Import tariff basis", "ESC VDO 2025-26 CitiPower TOU", "-", "Peak 3 pm-9 pm, off-peak otherwise")
@@ -1191,7 +1123,7 @@ def create_summary_matrix(results):
 
 
 def print_summary_matrix(matrix):
-    print("\n================ THESIS SUMMARY MATRIX ================")
+    print("\n================ SCENARIO 2: HARSHIL'S SUMMARY MATRIX ================")
 
     current_section = None
 
@@ -1207,7 +1139,7 @@ def print_summary_matrix(matrix):
             f"{row['note']}"
         )
 
-    print("\n=======================================================")
+    print("\n======================================================================")
 
 
 def save_summary_matrix(matrix):
@@ -1298,7 +1230,7 @@ def main():
     previous_relay_state = "OFF"
 
     print("===================================================")
-    print(" THESIS V2H SCENARIO STARTED")
+    print(" SCENARIO 2: HARSHIL'S SCENARIO STARTED")
     print(" 14:00-16:00 = 2-hour afternoon V2H relay event")
     print(" 16:00-17:00 = simulated charging, relay OFF")
     print(" 17:00-21:00 = 4-hour evening V2H relay event")
@@ -1472,16 +1404,12 @@ def main():
             print_summary_matrix(summary_matrix)
             save_summary_matrix(summary_matrix)
 
-            print(f"\nHourly log saved to: {HOURLY_LOG_FILE}")
-            print(f"Summary matrix saved to: {SUMMARY_MATRIX_FILE}")
-            print(f"Rule trace saved to: {RULE_TRACE_FILE}")
-            print(f"Event log saved to: {EVENT_LOG_FILE}")
-            print(f"Source references saved to: {SOURCE_REFERENCE_FILE}")
-            print(f"Input CSV files saved in: {DATA_DIR}/")
+            print(f"\nScenario 2 Harshil files saved to: {LOG_DIR}/")
+            print(f"Scenario 2 Harshil data files saved to: {DATA_DIR}/")
         else:
             print("No results recorded.")
 
-        print("Thesis V2H scenario complete.")
+        print("Scenario 2: Harshil's Scenario complete.")
 
 
 if __name__ == "__main__":
