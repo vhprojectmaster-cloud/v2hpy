@@ -24,17 +24,19 @@ except ImportError:
 
 # ============================================================
 # SCENARIO 2: HARSHIL'S SCENARIO
-# V2H WITH SIMULATED CHARGING + Price, TOU , CO2 EMISSION AWARE AND BATTERY-WEAR-AWARE FUZZY CONTROL
+# FUZZY DECISION CONTROLLER FOR HOLD / CHARGE / DISCHARGE
 # ============================================================
 #
-# Scenario design:
-#   1) 14:00–16:00  Afternoon V2H event, relay ON
-#   2) 16:00–17:00  Simulated PV/G2V charging, relay OFF
-#   3) 17:00–21:00  Evening peak V2H event, relay ON
+# Main idea:
+# The fuzzy controller decides the action each hour:
 #
-# Relay meaning:
-#   Relay ON  = V2H discharge demonstration active
-#   Relay OFF = hold / simulated charging / protection
+#   HOLD       = no EV energy action
+#   CHARGE     = EV charging mode, relay OFF
+#   DISCHARGE  = V2H mode, relay ON
+#
+# Relay rule:
+#   Relay ON  = DISCHARGE only
+#   Relay OFF = HOLD or CHARGE
 #
 # Hardware:
 #   Relay IN2 -> Raspberry Pi GPIO27 / physical pin 13
@@ -50,58 +52,47 @@ except ImportError:
 # REAL-WORLD DATA AND MODELLING REFERENCES
 # ============================================================
 #
-# These references explain where the modelled values come from.
-# The script uses representative hourly values for a lab-scale
-# demonstration. Replace CSV rows with downloaded real data later
-# if required.
+# The values below are representative scenario values for a
+# lab-scale thesis demonstration. They are not live API values.
+# The profile shapes and assumptions are based on the references
+# listed here.
 #
 # [R1] Residential load + rooftop PV profile shape:
 #      Ausgrid Solar Home Electricity Data via CSIRO NEAR.
 #      Provides half-hourly gross solar generation and household
-#      consumption for 300 solar homes.
+#      consumption for solar homes.
 #      https://near.csiro.au/assets/42966a8f-bc3c-4bde-91d6-91bc5826aa21
 #
 # [R2] Rooftop PV actual and forecast modelling:
 #      AEMO Australian Solar Energy Forecasting System, ASEFS.
 #      Produces solar forecasts for large solar and small-scale
-#      distributed rooftop PV.
+#      distributed PV systems.
 #      https://www.aemo.com.au/energy-systems/electricity/national-electricity-market-nem/nem-forecasting-and-planning/operational-forecasting/solar-and-wind-energy-forecasting/australian-solar-energy-forecasting-system
 #
 # [R3] Retail import tariff:
-#      Essential Services Commission Victoria Default Offer 2025–26.
-#      Domestic two-period TOU tariff: peak 3 pm–9 pm, off-peak all
-#      other times. This script uses CitiPower example rates:
-#      peak = 36.33 c/kWh, off-peak = 22.06 c/kWh.
+#      Essential Services Commission Victorian Default Offer 2025-26.
+#      Domestic two-period TOU tariff uses peak 3 pm-9 pm and
+#      off-peak all other times. The values here use a representative
+#      CitiPower-style peak/off-peak model for the scenario.
 #      https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/victorian-default-offer
 #
 # [R4] Feed-in tariff / export value:
-#      ESC minimum feed-in tariff review 2025–26 showed very low
-#      solar export values, including 0.00 c/kWh daytime and
-#      6.57 c/kWh evening peak in the time-varying benchmark.
-#      From 1 July 2025, ESC no longer sets a minimum feed-in tariff.
-#      Retailer feed-in tariffs cannot be below zero.
+#      ESC minimum feed-in tariff review 2025-26 showed low daytime
+#      export value and higher evening export value. This is used
+#      to model the idea that midday export is not always valuable.
 #      https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/minimum-feed-tariff/minimum-feed-tariff-review-2025-26
 #
 # [R5] CO2 factor:
-#      Australian National Greenhouse Accounts Factors 2024.
-#      Victoria grid electricity factor can be modelled around
-#      0.86 kg CO2-e/kWh when scope 2 and scope 3 are combined.
-#      This script uses hourly representative values around that
-#      benchmark to show midday low-carbon and evening high-carbon
-#      operation.
-#      https://www.dcceew.gov.au/climate-change/publications/national-greenhouse-accounts-factors-2024
+#      Australian National Greenhouse Accounts Factors.
+#      Victoria grid electricity emissions are used as the benchmark
+#      idea, with hourly representative values used for the scenario.
+#      https://www.dcceew.gov.au/climate-change/publications/national-greenhouse-accounts-factors-2025
 #
 # [R6] Battery cost / degradation cost:
-#      IEA Batteries and Secure Energy Transitions states lithium-ion
-#      battery prices declined to less than USD 140/kWh in 2023.
-#      This script uses a simplified wear-cost model for thesis
-#      demonstration. It is not a warranty model.
+#      IEA battery cost trend and V2H battery degradation literature
+#      are used to justify a simplified user battery-wear cost.
+#      This is not a warranty model.
 #      https://www.iea.org/reports/batteries-and-secure-energy-transitions
-#
-# [R7] V2H / HEMS modelling variables:
-#      Literature commonly uses EV SOC, availability, minimum SOC,
-#      maximum charge/discharge power, user preference and EV
-#      charge/discharge power as HEMS inputs/outputs.
 #
 # ============================================================
 
@@ -148,23 +139,29 @@ SOC_MAX = 95.0
 INITIAL_SOC = 82.0
 
 PV_REFERENCE_KW = 4.0
-
 HOUR_DELAY_SECONDS = 12.5
 
-V2H_SCORE_THRESHOLD = 55.0
+# Fuzzy output thresholds:
+# Negative output means charge.
+# Positive output means discharge.
+CHARGE_SCORE_THRESHOLD = -45.0
+DISCHARGE_SCORE_THRESHOLD = 55.0
 
+# Daily discharge budget avoids unrealistic battery cycling.
 DAILY_DISCHARGE_BUDGET_KWH = 16.0
 
+# These are controller weighting values, not market prices.
 CARBON_VALUE_C_PER_KG_CO2 = 10.0
 GRID_STRESS_VALUE_C_PER_KWH = 20.0
 
+# Simplified aging model assumptions for summary only.
 BATTERY_EOL_RETAINED_CAPACITY_PERCENT = 75.0
 ASSUMED_CYCLE_LIFE_EFC = 3000.0
-
 BASE_CAPACITY_FADE_PERCENT_PER_EFC = (
     (100.0 - BATTERY_EOL_RETAINED_CAPACITY_PERCENT) / ASSUMED_CYCLE_LIFE_EFC
 )
 
+# Always overwrite demo CSVs so the intended scenario runs.
 OVERWRITE_INPUT_CSVS = True
 
 
@@ -176,37 +173,37 @@ SOURCE_REFERENCES = [
     {
         "item": "home_load_kw and pv_actual_kw profile shape",
         "source": "Ausgrid Solar Home Electricity Data via CSIRO NEAR",
-        "reason": "Half-hourly household consumption and rooftop PV generation for solar homes",
+        "reason": "Household consumption and rooftop PV profile shape",
         "url": "https://near.csiro.au/assets/42966a8f-bc3c-4bde-91d6-91bc5826aa21",
     },
     {
-        "item": "pv_forecast_kw and PV forecast error concept",
+        "item": "pv_forecast_kw and forecast error concept",
         "source": "AEMO Australian Solar Energy Forecasting System",
-        "reason": "AEMO rooftop and utility solar forecasting framework",
+        "reason": "Rooftop PV and solar forecasting basis",
         "url": "https://www.aemo.com.au/energy-systems/electricity/national-electricity-market-nem/nem-forecasting-and-planning/operational-forecasting/solar-and-wind-energy-forecasting/australian-solar-energy-forecasting-system",
     },
     {
         "item": "import_price_c_per_kwh",
-        "source": "ESC Victorian Default Offer 2025–26",
-        "reason": "Domestic two-period TOU tariff, peak 3 pm–9 pm and off-peak all other times",
+        "source": "ESC Victorian Default Offer 2025-26",
+        "reason": "Domestic two-period time-of-use retail tariff basis",
         "url": "https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/victorian-default-offer",
     },
     {
         "item": "feed_in_price_c_per_kwh",
-        "source": "ESC minimum feed-in tariff review 2025–26",
-        "reason": "Low daytime export value and higher evening export benchmark",
+        "source": "ESC minimum feed-in tariff review 2025-26",
+        "reason": "Low daytime export value and evening export value basis",
         "url": "https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/minimum-feed-tariff/minimum-feed-tariff-review-2025-26",
     },
     {
         "item": "grid_co2_kg_per_kwh",
-        "source": "Australian National Greenhouse Accounts Factors 2024",
-        "reason": "Victoria grid electricity emissions factor used as benchmark",
-        "url": "https://www.dcceew.gov.au/climate-change/publications/national-greenhouse-accounts-factors-2024",
+        "source": "Australian National Greenhouse Accounts Factors",
+        "reason": "Victoria grid electricity emissions benchmark",
+        "url": "https://www.dcceew.gov.au/climate-change/publications/national-greenhouse-accounts-factors-2025",
     },
     {
-        "item": "battery_wear_cost and capacity fade model",
-        "source": "IEA Batteries and Secure Energy Transitions + V2H battery degradation literature",
-        "reason": "Battery cost trend and simplified battery-throughput aging model",
+        "item": "battery_wear_cost and capacity fade estimate",
+        "source": "IEA battery cost trend and V2H degradation literature",
+        "reason": "Simplified user battery-wear cost and aging model",
         "url": "https://www.iea.org/reports/batteries-and-secure-energy-transitions",
     },
 ]
@@ -221,38 +218,43 @@ def create_input_csvs():
 
     if OVERWRITE_INPUT_CSVS or not os.path.exists(ENERGY_PROFILE_FILE):
         energy_rows = [
-            # hour, home_load_kw, pv_actual_kw, pv_forecast_kw, ev_available,
-            # trip_reserve_soc, critical_load_level, control_window
-            [0, 0.55, 0.00, 0.00, 1, 55, 0.20, "none"],
-            [1, 0.48, 0.00, 0.00, 1, 55, 0.20, "none"],
-            [2, 0.42, 0.00, 0.00, 1, 55, 0.20, "none"],
-            [3, 0.40, 0.00, 0.00, 1, 55, 0.20, "none"],
-            [4, 0.45, 0.00, 0.00, 1, 55, 0.20, "none"],
-            [5, 0.65, 0.05, 0.10, 1, 55, 0.30, "none"],
-            [6, 1.05, 0.25, 0.35, 1, 55, 0.40, "none"],
+            # hour, home_load_kw, pv_actual_kw, pv_forecast_kw,
+            # ev_available, trip_reserve_soc, critical_load_level
 
-            [7, 1.45, 0.65, 0.75, 0, 60, 0.50, "none"],
-            [8, 1.30, 1.25, 1.40, 0, 60, 0.40, "none"],
-            [9, 1.10, 2.10, 2.30, 0, 60, 0.30, "none"],
+            [0, 0.55, 0.00, 0.00, 1, 55, 0.20],
+            [1, 0.48, 0.00, 0.00, 1, 55, 0.20],
+            [2, 0.42, 0.00, 0.00, 1, 55, 0.20],
+            [3, 0.40, 0.00, 0.00, 1, 55, 0.20],
+            [4, 0.45, 0.00, 0.00, 1, 55, 0.20],
+            [5, 0.65, 0.05, 0.10, 1, 55, 0.30],
+            [6, 1.05, 0.25, 0.35, 1, 55, 0.40],
 
-            [10, 1.25, 3.25, 3.40, 1, 55, 0.30, "none"],
-            [11, 1.50, 3.85, 4.00, 1, 55, 0.40, "none"],
-            [12, 1.70, 4.00, 4.10, 1, 55, 0.45, "none"],
-            [13, 1.80, 3.55, 3.60, 1, 55, 0.50, "none"],
+            # EV away from home during working hours.
+            [7, 1.45, 0.65, 0.75, 0, 60, 0.50],
+            [8, 1.30, 1.25, 1.40, 0, 60, 0.40],
+            [9, 1.10, 2.10, 2.30, 0, 60, 0.30],
+            [10, 1.25, 3.25, 3.40, 0, 60, 0.30],
+            [11, 1.50, 3.85, 4.00, 0, 60, 0.40],
+            [12, 1.70, 4.00, 4.10, 0, 60, 0.45],
+            [13, 1.80, 3.55, 3.60, 0, 60, 0.50],
 
-            [14, 2.90, 1.35, 1.50, 1, 55, 0.70, "afternoon_v2h"],
-            [15, 3.10, 1.10, 1.20, 1, 55, 0.80, "afternoon_v2h"],
+            # EV returns; fuzzy controller should see useful afternoon support.
+            [14, 2.90, 1.35, 1.50, 1, 55, 0.70],
+            [15, 3.10, 1.10, 1.20, 1, 55, 0.80],
 
-            [16, 1.35, 2.45, 2.30, 1, 55, 0.30, "between_event_charging"],
+            # PV surplus after first discharge; fuzzy controller should choose CHARGE.
+            [16, 1.35, 2.45, 2.30, 1, 55, 0.30],
 
-            [17, 3.00, 0.55, 0.55, 1, 55, 0.80, "evening_v2h"],
-            [18, 3.60, 0.00, 0.00, 1, 55, 1.00, "evening_v2h"],
-            [19, 3.50, 0.00, 0.00, 1, 55, 1.00, "evening_v2h"],
-            [20, 2.90, 0.00, 0.00, 1, 55, 0.90, "evening_v2h"],
+            # Evening peak; fuzzy controller should choose DISCHARGE.
+            [17, 3.00, 0.55, 0.55, 1, 55, 0.80],
+            [18, 3.60, 0.00, 0.00, 1, 55, 1.00],
+            [19, 3.50, 0.00, 0.00, 1, 55, 1.00],
+            [20, 2.90, 0.00, 0.00, 1, 55, 0.90],
 
-            [21, 2.20, 0.00, 0.00, 1, 55, 0.70, "none"],
-            [22, 1.40, 0.00, 0.00, 1, 55, 0.40, "none"],
-            [23, 0.90, 0.00, 0.00, 1, 55, 0.30, "none"],
+            # After peak; fuzzy controller should normally hold.
+            [21, 2.20, 0.00, 0.00, 1, 55, 0.70],
+            [22, 1.40, 0.00, 0.00, 1, 55, 0.40],
+            [23, 0.90, 0.00, 0.00, 1, 55, 0.30],
         ]
 
         with open(ENERGY_PROFILE_FILE, "w", newline="") as file:
@@ -265,7 +267,6 @@ def create_input_csvs():
                 "ev_available",
                 "trip_reserve_soc",
                 "critical_load_level",
-                "control_window",
             ])
             writer.writerows(energy_rows)
 
@@ -290,17 +291,20 @@ def create_input_csvs():
             [12, 22.06, 0.00, 0.8, 0.70, 0.25],
             [13, 22.06, 0.00, 0.8, 0.65, 0.30],
 
-            [14, 22.06, 0.00, 1.0, 0.70, 0.55],
+            # Afternoon stress starts rising.
+            [14, 22.06, 0.00, 1.0, 0.85, 0.55],
 
-            [15, 36.33, 6.57, 1.5, 0.80, 0.65],
+            # Peak retail period.
+            [15, 36.33, 6.57, 1.5, 0.90, 0.65],
             [16, 36.33, 6.57, 1.5, 0.75, 0.70],
             [17, 36.33, 6.57, 2.0, 0.88, 0.78],
             [18, 36.33, 6.57, 2.0, 0.95, 0.86],
             [19, 36.33, 6.57, 2.0, 0.95, 0.86],
             [20, 36.33, 6.57, 2.0, 0.90, 0.82],
 
-            [21, 22.06, 1.00, 4.0, 0.55, 0.75],
-            [22, 22.06, 1.00, 5.0, 0.35, 0.72],
+            # After peak.
+            [21, 22.06, 1.00, 4.0, 0.35, 0.65],
+            [22, 22.06, 1.00, 5.0, 0.30, 0.70],
             [23, 22.06, 1.00, 5.0, 0.25, 0.70],
         ]
 
@@ -319,6 +323,7 @@ def create_input_csvs():
     if OVERWRITE_INPUT_CSVS or not os.path.exists(BATTERY_PROFILE_FILE):
         battery_rows = [
             # hour, battery_temp_c, battery_wear_cost_c_per_kwh
+
             [0, 22, 7],
             [1, 22, 7],
             [2, 21, 7],
@@ -393,7 +398,6 @@ def load_input_data():
             "ev_available": int(energy["ev_available"]),
             "trip_reserve_soc": float(energy["trip_reserve_soc"]),
             "critical_load_level": float(energy["critical_load_level"]),
-            "control_window": energy["control_window"],
 
             "import_price_c_per_kwh": float(market["import_price_c_per_kwh"]),
             "feed_in_price_c_per_kwh": float(market["feed_in_price_c_per_kwh"]),
@@ -523,12 +527,31 @@ def calculate_features(row, soc, cycle_budget_remaining):
 
 
 # ============================================================
-# FUZZY V2H CONTROLLER
+# FUZZY CONTROLLER
+# ============================================================
+#
+# Inputs:
+#   1. net_load
+#   2. value_signal
+#   3. soc_margin
+#   4. grid_stress
+#   5. battery_wear_stress
+#
+# Output:
+#   fuzzy_action_score
+#
+#   Negative score  -> CHARGE
+#   Near zero score -> HOLD
+#   Positive score  -> DISCHARGE
+#
+# Simple final decisions:
+#   HOLD
+#   CHARGE
+#   DISCHARGE
+#
 # ============================================================
 
-def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
-    control_window = row["control_window"]
-
+def fuzzy_controller(row, soc, cycle_budget_remaining):
     features = calculate_features(row, soc, cycle_budget_remaining)
 
     net_load = features["net_load"]
@@ -537,12 +560,17 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
     grid_stress = row["grid_stress_level"]
     battery_wear_stress = features["battery_wear_stress"]
 
+    # -----------------------------
+    # Hard safety checks
+    # -----------------------------
+
     if row["ev_available"] == 0:
         return {
-            "decision": "EV_NOT_AVAILABLE",
+            "decision": "HOLD",
+            "decision_reason": "EV not available",
             "ev_power_kw": 0.0,
             "relay_on": False,
-            "fuzzy_score": 0.0,
+            "fuzzy_action_score": 0.0,
             "dominant_rule": "Hard rule: EV not available",
             "dominant_strength": 1.0,
             "dominant_score": 0.0,
@@ -552,10 +580,11 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
 
     if soc <= SOC_MIN:
         return {
-            "decision": "HARD_SOC_MIN_PROTECTION",
+            "decision": "HOLD",
+            "decision_reason": "SOC minimum protection",
             "ev_power_kw": 0.0,
             "relay_on": False,
-            "fuzzy_score": 0.0,
+            "fuzzy_action_score": 0.0,
             "dominant_rule": "Hard rule: SOC minimum protection",
             "dominant_strength": 1.0,
             "dominant_score": 0.0,
@@ -565,10 +594,11 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
 
     if soc_margin <= 0:
         return {
-            "decision": "TRIP_RESERVE_PROTECTION",
+            "decision": "HOLD",
+            "decision_reason": "Trip reserve protection",
             "ev_power_kw": 0.0,
             "relay_on": False,
-            "fuzzy_score": 0.0,
+            "fuzzy_action_score": 0.0,
             "dominant_rule": "Hard rule: trip reserve protection",
             "dominant_strength": 1.0,
             "dominant_score": 0.0,
@@ -578,56 +608,40 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
 
     if cycle_budget_remaining <= 0:
         return {
-            "decision": "DAILY_CYCLE_BUDGET_PROTECTION",
+            "decision": "HOLD",
+            "decision_reason": "Daily discharge budget protection",
             "ev_power_kw": 0.0,
             "relay_on": False,
-            "fuzzy_score": 0.0,
-            "dominant_rule": "Hard rule: daily V2H energy budget exhausted",
+            "fuzzy_action_score": 0.0,
+            "dominant_rule": "Hard rule: daily discharge budget exhausted",
             "dominant_strength": 1.0,
             "dominant_score": 0.0,
             "features": features,
             "levels": {},
         }
 
-    if control_window == "between_event_charging":
-        available_battery_room_kwh = ((SOC_MAX - soc) / 100.0) * EV_BATTERY_KWH
-
-        charge_power = min(
-            EV_MAX_CHARGE_KW,
-            max(features["pv_surplus"], 0.0),
-            available_battery_room_kwh,
-        )
-
-        if charge_power > 0.05:
-            return {
-                "decision": "SIMULATED_PV_G2V_CHARGING",
-                "ev_power_kw": -charge_power,
-                "relay_on": False,
-                "fuzzy_score": -70.0,
-                "dominant_rule": "Charging rule: between-event PV surplus charging",
-                "dominant_strength": 1.0,
-                "dominant_score": -70.0,
-                "features": features,
-                "levels": {},
-            }
+    # -----------------------------
+    # Fuzzification
+    # -----------------------------
 
     net_load_mf = {
-        "surplus": trapezoid(net_load, -5.0, -5.0, -0.8, -0.1),
-        "low_deficit": triangle(net_load, 0.1, 0.9, 1.8),
-        "medium_deficit": triangle(net_load, 1.2, 2.5, 3.8),
-        "high_deficit": trapezoid(net_load, 3.2, 4.0, 6.0, 6.0),
+        "surplus": trapezoid(net_load, -5.0, -5.0, -0.40, -0.05),
+        "balanced": triangle(net_load, -0.40, 0.0, 0.40),
+        "low_deficit": triangle(net_load, 0.10, 0.90, 1.80),
+        "medium_deficit": triangle(net_load, 1.20, 2.50, 3.80),
+        "high_deficit": trapezoid(net_load, 3.20, 4.00, 6.00, 6.00),
     }
 
     value_mf = {
         "low": trapezoid(value_signal, -50.0, -50.0, 8.0, 15.0),
-        "medium": triangle(value_signal, 12.0, 24.0, 36.0),
-        "high": trapezoid(value_signal, 30.0, 42.0, 80.0, 80.0),
+        "medium": triangle(value_signal, 12.0, 26.0, 40.0),
+        "high": trapezoid(value_signal, 32.0, 44.0, 90.0, 90.0),
     }
 
     soc_margin_mf = {
-        "critical": trapezoid(soc_margin, -20.0, -20.0, 2.0, 6.0),
-        "safe": triangle(soc_margin, 4.0, 15.0, 28.0),
-        "high": trapezoid(soc_margin, 22.0, 32.0, 70.0, 70.0),
+        "tight": trapezoid(soc_margin, -20.0, -20.0, 1.0, 4.0),
+        "safe": triangle(soc_margin, 2.0, 12.0, 28.0),
+        "high": trapezoid(soc_margin, 22.0, 34.0, 80.0, 80.0),
     }
 
     grid_stress_mf = {
@@ -650,53 +664,79 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
         "battery_wear_level": best_label(battery_wear_mf)[0],
     }
 
+    # -----------------------------
+    # Fuzzy rule base
+    # -----------------------------
+    #
+    # Output score:
+    #   -100 = strong charge
+    #    -70 = normal charge
+    #      0 = hold
+    #    +60 = light discharge
+    #    +80 = medium discharge
+    #   +100 = strong discharge
+    #
+    # All decisions are made by fuzzy score.
+    # -----------------------------
+
     rules = []
 
+    # HOLD rules
     rules.append((
         max(
-            net_load_mf["surplus"],
+            net_load_mf["balanced"],
             value_mf["low"],
-            soc_margin_mf["critical"],
+            soc_margin_mf["tight"],
             battery_wear_mf["high"],
         ),
         0.0,
-        "Hold: no deficit / low value / SOC critical / high battery wear",
+        "Hold: balanced load, low value, tight SOC, or high battery wear",
     ))
 
+    # CHARGE rules
+    rules.append((
+        min(
+            net_load_mf["surplus"],
+            max(soc_margin_mf["tight"], soc_margin_mf["safe"]),
+            max(battery_wear_mf["low"], battery_wear_mf["medium"]),
+        ),
+        -90.0,
+        "Charge: PV surplus and battery has usable room",
+    ))
+
+    rules.append((
+        min(
+            net_load_mf["surplus"],
+            soc_margin_mf["high"],
+            battery_wear_mf["low"],
+        ),
+        -55.0,
+        "Charge: PV surplus top-up with low battery stress",
+    ))
+
+    # DISCHARGE rules
     rules.append((
         min(
             net_load_mf["low_deficit"],
-            value_mf["high"],
-            soc_margin_mf["high"],
-            grid_stress_mf["high"],
-            battery_wear_mf["low"],
-        ),
-        60.0,
-        "Weak V2H: low deficit but high value and safe battery",
-    ))
-
-    rules.append((
-        min(
-            max(net_load_mf["low_deficit"], net_load_mf["medium_deficit"]),
             max(value_mf["medium"], value_mf["high"]),
             max(soc_margin_mf["safe"], soc_margin_mf["high"]),
             max(grid_stress_mf["medium"], grid_stress_mf["high"]),
             max(battery_wear_mf["low"], battery_wear_mf["medium"]),
         ),
-        75.0,
-        "Afternoon support: useful deficit + value + grid stress + safe SOC",
+        60.0,
+        "Discharge: small deficit but useful grid support value",
     ))
 
     rules.append((
         min(
             net_load_mf["medium_deficit"],
-            value_mf["high"],
+            max(value_mf["medium"], value_mf["high"]),
             max(soc_margin_mf["safe"], soc_margin_mf["high"]),
-            grid_stress_mf["high"],
+            max(grid_stress_mf["medium"], grid_stress_mf["high"]),
             max(battery_wear_mf["low"], battery_wear_mf["medium"]),
         ),
-        88.0,
-        "Strong V2H: medium deficit + high value + high grid stress",
+        80.0,
+        "Discharge: medium deficit with good value and acceptable wear",
     ))
 
     rules.append((
@@ -708,7 +748,7 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
             max(battery_wear_mf["low"], battery_wear_mf["medium"]),
         ),
         100.0,
-        "Major V2H: high deficit + high value + high grid stress + acceptable wear",
+        "Discharge: high deficit, high value, high grid stress",
     ))
 
     rules.append((
@@ -719,8 +759,12 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
             soc_margin_mf["safe"],
         ),
         85.0,
-        "Network support: grid stress high and SOC still above reserve",
+        "Discharge: grid support while SOC is still safe",
     ))
+
+    # -----------------------------
+    # Defuzzification
+    # -----------------------------
 
     numerator = 0.0
     denominator = 0.0
@@ -738,73 +782,81 @@ def fuzzy_v2h_controller(row, soc, cycle_budget_remaining):
             dominant_score = score
             dominant_rule = rule_name
 
-    fuzzy_score = numerator / denominator if denominator != 0 else 0.0
+    if denominator == 0.0:
+        fuzzy_action_score = 0.0
+    else:
+        fuzzy_action_score = numerator / denominator
 
-    v2h_window_allowed = control_window in ["afternoon_v2h", "evening_v2h"]
+    # -----------------------------
+    # Final decision from fuzzy score
+    # -----------------------------
 
-    if not v2h_window_allowed:
-        return {
-            "decision": "HOLD_NOT_IN_USER_V2H_WINDOW",
-            "ev_power_kw": 0.0,
-            "relay_on": False,
-            "fuzzy_score": fuzzy_score,
-            "dominant_rule": dominant_rule,
-            "dominant_strength": dominant_strength,
-            "dominant_score": dominant_score,
-            "features": features,
-            "levels": levels,
-        }
+    decision = "HOLD"
+    decision_reason = "Fuzzy output near hold region"
+    ev_power_kw = 0.0
+    relay_on = False
 
-    max_energy_allowed_by_soc_kwh = max(
-        ((soc - row["trip_reserve_soc"]) / 100.0) * EV_BATTERY_KWH,
-        0.0,
-    )
+    # CHARGE decision
+    if (
+        fuzzy_action_score <= CHARGE_SCORE_THRESHOLD
+        and features["pv_surplus"] > 0.05
+        and soc < SOC_MAX
+    ):
+        available_battery_room_kwh = ((SOC_MAX - soc) / 100.0) * EV_BATTERY_KWH
 
-    max_power_allowed_by_budget_kw = max(
-        cycle_budget_remaining * DAILY_DISCHARGE_BUDGET_KWH,
-        0.0,
-    )
+        charge_power = min(
+            EV_MAX_CHARGE_KW,
+            features["pv_surplus"],
+            available_battery_room_kwh,
+        )
 
-    if fuzzy_score >= V2H_SCORE_THRESHOLD and net_load > 0:
-        if control_window == "afternoon_v2h":
-            requested_power = min(1.6, net_load)
-            decision = "AFTERNOON_2H_MINOR_V2H_EVENT"
+        if charge_power > 0.05:
+            decision = "CHARGE"
+            decision_reason = "Fuzzy controller selected charging"
+            ev_power_kw = -charge_power
+            relay_on = False
 
-        elif control_window == "evening_v2h":
-            if fuzzy_score >= 85.0:
-                requested_power = min(EV_MAX_DISCHARGE_KW, net_load)
-                decision = "EVENING_4H_MAJOR_V2H_EVENT"
-            else:
-                requested_power = min(2.2, net_load)
-                decision = "EVENING_4H_MODERATE_V2H_EVENT"
+    # DISCHARGE decision
+    elif (
+        fuzzy_action_score >= DISCHARGE_SCORE_THRESHOLD
+        and net_load > 0.05
+        and soc_margin > 0
+    ):
+        max_energy_allowed_by_soc_kwh = max(
+            ((soc - row["trip_reserve_soc"]) / 100.0) * EV_BATTERY_KWH,
+            0.0,
+        )
 
+        max_power_allowed_by_budget_kw = max(
+            cycle_budget_remaining * DAILY_DISCHARGE_BUDGET_KWH,
+            0.0,
+        )
+
+        if fuzzy_action_score >= 85.0:
+            requested_power = min(EV_MAX_DISCHARGE_KW, net_load)
+        elif fuzzy_action_score >= 70.0:
+            requested_power = min(2.2, net_load)
         else:
-            requested_power = 0.0
-            decision = "HOLD"
+            requested_power = min(1.4, net_load)
 
-        ev_power = min(
+        discharge_power = min(
             requested_power,
             max_energy_allowed_by_soc_kwh,
             max_power_allowed_by_budget_kw,
         )
 
-        if ev_power > 0.05:
+        if discharge_power > 0.05:
+            decision = "DISCHARGE"
+            decision_reason = "Fuzzy controller selected V2H discharge"
+            ev_power_kw = discharge_power
             relay_on = True
-        else:
-            ev_power = 0.0
-            relay_on = False
-            decision = "SOC_OR_BUDGET_LIMITED_HOLD"
-
-    else:
-        ev_power = 0.0
-        relay_on = False
-        decision = "FUZZY_SCORE_BELOW_THRESHOLD_HOLD"
 
     return {
         "decision": decision,
-        "ev_power_kw": ev_power,
+        "decision_reason": decision_reason,
+        "ev_power_kw": ev_power_kw,
         "relay_on": relay_on,
-        "fuzzy_score": fuzzy_score,
+        "fuzzy_action_score": fuzzy_action_score,
         "dominant_rule": dominant_rule,
         "dominant_strength": dominant_strength,
         "dominant_score": dominant_score,
@@ -874,42 +926,40 @@ def create_summary_matrix(results):
     total_pv_kwh = sum(row["pv_actual_kw"] for row in results)
 
     without_v2h_import_kwh = 0.0
-    with_v2h_import_kwh = 0.0
+    with_controller_import_kwh = 0.0
 
     without_v2h_export_kwh = 0.0
-    with_v2h_export_kwh = 0.0
+    with_controller_export_kwh = 0.0
 
     without_v2h_curtailment_kwh = 0.0
-    with_v2h_curtailment_kwh = 0.0
+    with_controller_curtailment_kwh = 0.0
 
     without_v2h_bill = 0.0
-    with_v2h_bill_before_wear = 0.0
+    with_controller_bill_before_wear = 0.0
 
     without_v2h_emissions = 0.0
-    with_v2h_emissions = 0.0
+    with_controller_emissions = 0.0
 
     without_v2h_peak_import_kw = 0.0
-    with_v2h_peak_import_kw = 0.0
+    with_controller_peak_import_kw = 0.0
 
     battery_wear_cost = 0.0
 
-    ev_discharge_energy_to_home_kwh = 0.0
+    discharge_energy_to_home_kwh = 0.0
     battery_energy_depleted_kwh = 0.0
 
-    ev_charge_input_kwh = 0.0
-    ev_charge_stored_kwh = 0.0
+    charge_input_kwh = 0.0
+    charge_stored_kwh = 0.0
 
-    afternoon_v2h_energy_kwh = 0.0
-    evening_v2h_energy_kwh = 0.0
+    afternoon_discharge_energy_kwh = 0.0
+    evening_discharge_energy_kwh = 0.0
 
     battery_throughput_kwh = 0.0
-
-    forecast_risk_holds = 0
     reserve_violations = 0
 
     for row in results:
         baseline_grid = row["without_v2h_grid_kw"]
-        managed_grid = row["with_v2h_grid_kw"]
+        managed_grid = row["with_controller_grid_kw"]
         export_limit = row["export_limit_kw"]
 
         base_imp, base_exp, base_curt = import_export_curtailment(
@@ -923,32 +973,33 @@ def create_summary_matrix(results):
         )
 
         without_v2h_import_kwh += base_imp
-        with_v2h_import_kwh += managed_imp
+        with_controller_import_kwh += managed_imp
 
         without_v2h_export_kwh += base_exp
-        with_v2h_export_kwh += managed_exp
+        with_controller_export_kwh += managed_exp
 
         without_v2h_curtailment_kwh += base_curt
-        with_v2h_curtailment_kwh += managed_curt
+        with_controller_curtailment_kwh += managed_curt
 
         without_v2h_bill += (
             base_imp * (row["import_price_c_per_kwh"] / 100.0)
             - base_exp * (row["feed_in_price_c_per_kwh"] / 100.0)
         )
 
-        with_v2h_bill_before_wear += (
+        with_controller_bill_before_wear += (
             managed_imp * (row["import_price_c_per_kwh"] / 100.0)
             - managed_exp * (row["feed_in_price_c_per_kwh"] / 100.0)
         )
 
         without_v2h_emissions += base_imp * row["grid_co2_kg_per_kwh"]
-        with_v2h_emissions += managed_imp * row["grid_co2_kg_per_kwh"]
+        with_controller_emissions += managed_imp * row["grid_co2_kg_per_kwh"]
 
         without_v2h_peak_import_kw = max(without_v2h_peak_import_kw, base_imp)
-        with_v2h_peak_import_kw = max(with_v2h_peak_import_kw, managed_imp)
+        with_controller_peak_import_kw = max(with_controller_peak_import_kw, managed_imp)
 
         if row["ev_power_kw"] > 0:
-            ev_discharge_energy_to_home_kwh += row["ev_power_kw"]
+            discharge_energy_to_home_kwh += row["ev_power_kw"]
+
             battery_depleted = row["ev_power_kw"] / DISCHARGE_EFFICIENCY
             battery_energy_depleted_kwh += battery_depleted
             battery_throughput_kwh += battery_depleted
@@ -957,42 +1008,39 @@ def create_summary_matrix(results):
                 row["battery_wear_cost_c_per_kwh"] / 100.0
             )
 
-            if row["control_window"] == "afternoon_v2h":
-                afternoon_v2h_energy_kwh += row["ev_power_kw"]
+            if 14 <= row["hour"] <= 15:
+                afternoon_discharge_energy_kwh += row["ev_power_kw"]
 
-            if row["control_window"] == "evening_v2h":
-                evening_v2h_energy_kwh += row["ev_power_kw"]
+            if 17 <= row["hour"] <= 20:
+                evening_discharge_energy_kwh += row["ev_power_kw"]
 
         if row["ev_power_kw"] < 0:
-            charge_input = abs(row["ev_power_kw"])
-            charge_stored = charge_input * CHARGE_EFFICIENCY
+            input_energy = abs(row["ev_power_kw"])
+            stored_energy = input_energy * CHARGE_EFFICIENCY
 
-            ev_charge_input_kwh += charge_input
-            ev_charge_stored_kwh += charge_stored
-            battery_throughput_kwh += charge_stored
+            charge_input_kwh += input_energy
+            charge_stored_kwh += stored_energy
+            battery_throughput_kwh += stored_energy
 
         if row["soc_after_percent"] < row["trip_reserve_soc"]:
             reserve_violations += 1
 
-        if row["decision"] == "HOLD_NOT_IN_USER_V2H_WINDOW" and row["forecast_risk"] > 0.30:
-            forecast_risk_holds += 1
+    with_controller_bill_after_wear = with_controller_bill_before_wear + battery_wear_cost
 
-    with_v2h_bill_after_wear = with_v2h_bill_before_wear + battery_wear_cost
+    gross_saving_before_wear = without_v2h_bill - with_controller_bill_before_wear
+    net_saving_after_wear = without_v2h_bill - with_controller_bill_after_wear
 
-    gross_bill_saving_before_wear = without_v2h_bill - with_v2h_bill_before_wear
-    net_bill_saving_after_wear = without_v2h_bill - with_v2h_bill_after_wear
+    import_reduction_kwh = without_v2h_import_kwh - with_controller_import_kwh
+    emissions_avoided_kg = without_v2h_emissions - with_controller_emissions
 
-    import_reduction_kwh = without_v2h_import_kwh - with_v2h_import_kwh
-    emissions_avoided_kg = without_v2h_emissions - with_v2h_emissions
-
-    peak_reduction_kw = without_v2h_peak_import_kw - with_v2h_peak_import_kw
+    peak_reduction_kw = without_v2h_peak_import_kw - with_controller_peak_import_kw
 
     if without_v2h_peak_import_kw > 0:
         peak_reduction_percent = (peak_reduction_kw / without_v2h_peak_import_kw) * 100.0
     else:
         peak_reduction_percent = 0.0
 
-    curtailment_reduction_kwh = without_v2h_curtailment_kwh - with_v2h_curtailment_kwh
+    curtailment_reduction_kwh = without_v2h_curtailment_kwh - with_controller_curtailment_kwh
 
     equivalent_full_cycles_throughput = battery_throughput_kwh / (2.0 * EV_BATTERY_KWH)
     equivalent_full_cycles_discharge_only = battery_energy_depleted_kwh / EV_BATTERY_KWH
@@ -1006,17 +1054,15 @@ def create_summary_matrix(results):
         * temperature_multiplier
     )
 
-    relay_on_hours = sum(1 for row in results if row["relay_state"] == "ON")
-
-    active_v2h_rows = [row for row in results if row["relay_state"] == "ON"]
-    active_scores = [row["fuzzy_score"] for row in active_v2h_rows]
+    active_rows = [row for row in results if row["decision"] == "DISCHARGE"]
+    active_scores = [row["fuzzy_action_score"] for row in active_rows]
 
     if active_scores:
-        avg_active_fuzzy_score = sum(active_scores) / len(active_scores)
-        max_active_fuzzy_score = max(active_scores)
+        average_discharge_score = sum(active_scores) / len(active_scores)
+        maximum_discharge_score = max(active_scores)
     else:
-        avg_active_fuzzy_score = 0.0
-        max_active_fuzzy_score = 0.0
+        average_discharge_score = 0.0
+        maximum_discharge_score = 0.0
 
     final_soc = results[-1]["soc_after_percent"]
     min_soc = min(row["soc_after_percent"] for row in results)
@@ -1045,64 +1091,53 @@ def create_summary_matrix(results):
             "note": note,
         })
 
-    add("SCENARIO 2 HARSHIL OVERVIEW", "Scenario name", "Scenario 2: Harshil's Scenario", "-", "Battery-wear-aware V2H with simulated charging")
-    add("SCENARIO 2 HARSHIL OVERVIEW", "Data/log folder name", "scenario2_harshil_files", "-", "All Scenario 2 Harshil files are saved in this folder")
-
-    add("DATA & MODELLING SOURCES", "Load/PV profile basis", "Ausgrid/CSIRO NEAR", "-", "Hourly values are modelled from real household + rooftop PV profile shapes")
-    add("DATA & MODELLING SOURCES", "PV forecast basis", "AEMO ASEFS", "-", "PV forecast values are representative forecast estimates")
-    add("DATA & MODELLING SOURCES", "Import tariff basis", "ESC VDO 2025-26 CitiPower TOU", "-", "Peak 3 pm-9 pm, off-peak otherwise")
-    add("DATA & MODELLING SOURCES", "Feed-in value basis", "ESC FiT 2025-26 benchmark", "-", "Low daytime export value and evening export value")
-    add("DATA & MODELLING SOURCES", "CO2 basis", "NGA Victoria factor + hourly shape", "-", "Representative hourly CO2 values for control logic")
-    add("DATA & MODELLING SOURCES", "Battery wear basis", "IEA + simplified EFC model", "-", "Battery wear model is simplified for thesis demonstration")
+    add("SCENARIO 2 HARSHIL OVERVIEW", "Scenario name", "Scenario 2: Harshil's Scenario", "-", "Fuzzy controller chooses HOLD, CHARGE, or DISCHARGE")
+    add("SCENARIO 2 HARSHIL OVERVIEW", "Data/log folder name", "scenario2_harshil_files", "-", "All Scenario 2 Harshil files are saved here")
+    add("SCENARIO 2 HARSHIL OVERVIEW", "Relay rule", "Relay ON only for DISCHARGE", "-", "CHARGE and HOLD keep relay OFF")
 
     add("FUZZY CONTROLLER", "Number of fuzzy inputs", 5, "inputs", "net load, value signal, SOC margin, grid stress, battery wear")
-    add("FUZZY CONTROLLER", "Fuzzy input 1", "net_load", "kW", "House demand minus PV generation")
-    add("FUZZY CONTROLLER", "Fuzzy input 2", "value_signal", "c/kWh equivalent", "Import price, feed-in value, carbon value and grid stress value")
-    add("FUZZY CONTROLLER", "Fuzzy input 3", "soc_margin", "%", "SOC above user trip reserve")
-    add("FUZZY CONTROLLER", "Fuzzy input 4", "grid_stress", "0-1", "Grid/network stress level")
-    add("FUZZY CONTROLLER", "Fuzzy input 5", "battery_wear_stress", "0-1", "Battery temperature, cycle budget and wear cost")
-    add("FUZZY CONTROLLER", "Average fuzzy score during V2H", round(avg_active_fuzzy_score, 2), "%", "Average score only during relay ON V2H hours")
-    add("FUZZY CONTROLLER", "Maximum fuzzy score during V2H", round(max_active_fuzzy_score, 2), "%", "Highest V2H confidence score")
-    add("FUZZY CONTROLLER", "Forecast-risk hold events", forecast_risk_holds, "hours", "Times controller held while forecast uncertainty was high")
+    add("FUZZY CONTROLLER", "Output decisions", "HOLD / CHARGE / DISCHARGE", "-", "Final operation is selected from fuzzy action score")
+    add("FUZZY CONTROLLER", "Average discharge score", round(average_discharge_score, 2), "score", "Average fuzzy score during DISCHARGE hours")
+    add("FUZZY CONTROLLER", "Maximum discharge score", round(maximum_discharge_score, 2), "score", "Highest fuzzy discharge score")
+    add("FUZZY CONTROLLER", "Charge score threshold", CHARGE_SCORE_THRESHOLD, "score", "Score below this selects CHARGE")
+    add("FUZZY CONTROLLER", "Discharge score threshold", DISCHARGE_SCORE_THRESHOLD, "score", "Score above this selects DISCHARGE")
 
-    add("SCENARIO OPERATION", "Afternoon V2H event period", "14:00-16:00", "-", "2-hour planned V2H event")
-    add("SCENARIO OPERATION", "Between-event charging period", "16:00-17:00", "-", "Simulated charging only, relay OFF")
-    add("SCENARIO OPERATION", "Evening V2H event period", "17:00-21:00", "-", "4-hour evening peak support event")
-    add("SCENARIO OPERATION", "Relay ON hours", relay_on_hours, "hours", "Physical relay/lamp active only for V2H discharge")
-    add("SCENARIO OPERATION", "Relay ON periods", hours_list(results, lambda r: r["relay_state"] == "ON"), "-", "Actual relay ON hours")
-    add("SCENARIO OPERATION", "Charging periods", hours_list(results, lambda r: r["ev_power_kw"] < 0), "-", "Simulated charging hours, relay OFF")
+    add("OPERATION LOG", "HOLD hours", hours_list(results, lambda r: r["decision"] == "HOLD"), "-", "Fuzzy controller selected hold")
+    add("OPERATION LOG", "CHARGE hours", hours_list(results, lambda r: r["decision"] == "CHARGE"), "-", "Fuzzy controller selected charge")
+    add("OPERATION LOG", "DISCHARGE hours", hours_list(results, lambda r: r["decision"] == "DISCHARGE"), "-", "Fuzzy controller selected V2H discharge")
+    add("OPERATION LOG", "Relay ON periods", hours_list(results, lambda r: r["relay_state"] == "ON"), "-", "Physical relay/lamp active only during DISCHARGE")
 
     add("ENERGY BALANCE", "Total home load", round(total_home_load_kwh, 2), "kWh", "Daily household load")
     add("ENERGY BALANCE", "Total PV generation", round(total_pv_kwh, 2), "kWh", "Daily rooftop PV generation")
-    add("ENERGY BALANCE", "EV discharge to home", round(ev_discharge_energy_to_home_kwh, 2), "kWh", "Useful V2H energy supplied to home")
-    add("ENERGY BALANCE", "Afternoon V2H energy", round(afternoon_v2h_energy_kwh, 2), "kWh", "Energy supplied in 2-hour event")
-    add("ENERGY BALANCE", "Evening V2H energy", round(evening_v2h_energy_kwh, 2), "kWh", "Energy supplied in 4-hour event")
-    add("ENERGY BALANCE", "Simulated charging input", round(ev_charge_input_kwh, 2), "kWh", "Charging energy drawn from PV surplus/control window")
-    add("ENERGY BALANCE", "Stored charging energy", round(ev_charge_stored_kwh, 2), "kWh", "Energy added to battery after charging efficiency")
+    add("ENERGY BALANCE", "Discharge energy to home", round(discharge_energy_to_home_kwh, 2), "kWh", "Useful V2H energy supplied")
+    add("ENERGY BALANCE", "Afternoon discharge energy", round(afternoon_discharge_energy_kwh, 2), "kWh", "Discharge energy during 14:00-16:00")
+    add("ENERGY BALANCE", "Evening discharge energy", round(evening_discharge_energy_kwh, 2), "kWh", "Discharge energy during 17:00-21:00")
+    add("ENERGY BALANCE", "Charge input energy", round(charge_input_kwh, 2), "kWh", "Energy used for charging")
+    add("ENERGY BALANCE", "Stored charge energy", round(charge_stored_kwh, 2), "kWh", "Energy added to battery after efficiency")
 
-    add("WITH V2H vs WITHOUT V2H", "Grid import without V2H", round(without_v2h_import_kwh, 2), "kWh", "Baseline import if EV is not used")
-    add("WITH V2H vs WITHOUT V2H", "Grid import with V2H", round(with_v2h_import_kwh, 2), "kWh", "Managed import with V2H and simulated charging")
-    add("WITH V2H vs WITHOUT V2H", "Grid import reduction", round(import_reduction_kwh, 2), "kWh", "Import reduction from V2H operation")
-    add("WITH V2H vs WITHOUT V2H", "Peak import without V2H", round(without_v2h_peak_import_kw, 2), "kW", "Highest baseline grid import")
-    add("WITH V2H vs WITHOUT V2H", "Peak import with V2H", round(with_v2h_peak_import_kw, 2), "kW", "Highest managed grid import")
+    add("WITH V2H vs WITHOUT V2H", "Grid import without V2H", round(without_v2h_import_kwh, 2), "kWh", "Baseline if EV is not used")
+    add("WITH V2H vs WITHOUT V2H", "Grid import with controller", round(with_controller_import_kwh, 2), "kWh", "Managed result with fuzzy decisions")
+    add("WITH V2H vs WITHOUT V2H", "Grid import reduction", round(import_reduction_kwh, 2), "kWh", "Import reduction from controller")
+    add("WITH V2H vs WITHOUT V2H", "Peak import without V2H", round(without_v2h_peak_import_kw, 2), "kW", "Highest baseline import")
+    add("WITH V2H vs WITHOUT V2H", "Peak import with controller", round(with_controller_peak_import_kw, 2), "kW", "Highest managed import")
     add("WITH V2H vs WITHOUT V2H", "Peak import reduction", round(peak_reduction_kw, 2), "kW", "Peak shaving result")
     add("WITH V2H vs WITHOUT V2H", "Peak import reduction", round(peak_reduction_percent, 1), "%", "Percentage peak reduction")
 
     add("COST COMPARISON", "Bill without V2H", round(without_v2h_bill, 2), "$", "Baseline daily electricity cost")
-    add("COST COMPARISON", "Bill with V2H before wear", round(with_v2h_bill_before_wear, 2), "$", "Managed bill before battery wear")
+    add("COST COMPARISON", "Bill with controller before wear", round(with_controller_bill_before_wear, 2), "$", "Managed bill before battery wear")
     add("COST COMPARISON", "Battery wear cost", round(battery_wear_cost, 2), "$", "Estimated user battery degradation cost")
-    add("COST COMPARISON", "Bill with V2H after wear", round(with_v2h_bill_after_wear, 2), "$", "Managed bill including wear cost")
-    add("COST COMPARISON", "Gross saving before wear", round(gross_bill_saving_before_wear, 2), "$", "Saving before battery degradation cost")
-    add("COST COMPARISON", "Net saving after wear", round(net_bill_saving_after_wear, 2), "$", "Saving after user battery wear cost")
+    add("COST COMPARISON", "Bill with controller after wear", round(with_controller_bill_after_wear, 2), "$", "Managed bill including wear cost")
+    add("COST COMPARISON", "Gross saving before wear", round(gross_saving_before_wear, 2), "$", "Saving before battery wear cost")
+    add("COST COMPARISON", "Net saving after wear", round(net_saving_after_wear, 2), "$", "Saving after battery wear cost")
 
     add("CO2 COMPARISON", "CO2 without V2H", round(without_v2h_emissions, 2), "kg CO2-e", "Baseline grid import emissions")
-    add("CO2 COMPARISON", "CO2 with V2H", round(with_v2h_emissions, 2), "kg CO2-e", "Managed grid import emissions")
-    add("CO2 COMPARISON", "CO2 avoided", round(emissions_avoided_kg, 2), "kg CO2-e", "Emission reduction from reduced peak grid import")
+    add("CO2 COMPARISON", "CO2 with controller", round(with_controller_emissions, 2), "kg CO2-e", "Managed grid import emissions")
+    add("CO2 COMPARISON", "CO2 avoided", round(emissions_avoided_kg, 2), "kg CO2-e", "Emission reduction from reduced grid import")
 
     add("PV EXPORT / CURTAILMENT", "PV export without V2H", round(without_v2h_export_kwh, 2), "kWh", "Baseline exported PV")
-    add("PV EXPORT / CURTAILMENT", "PV export with V2H", round(with_v2h_export_kwh, 2), "kWh", "Managed exported PV")
+    add("PV EXPORT / CURTAILMENT", "PV export with controller", round(with_controller_export_kwh, 2), "kWh", "Managed exported PV")
     add("PV EXPORT / CURTAILMENT", "Curtailment without V2H", round(without_v2h_curtailment_kwh, 2), "kWh", "Baseline export-limit curtailment")
-    add("PV EXPORT / CURTAILMENT", "Curtailment with V2H", round(with_v2h_curtailment_kwh, 2), "kWh", "Managed export-limit curtailment")
+    add("PV EXPORT / CURTAILMENT", "Curtailment with controller", round(with_controller_curtailment_kwh, 2), "kWh", "Managed export-limit curtailment")
     add("PV EXPORT / CURTAILMENT", "Curtailment reduction", round(curtailment_reduction_kwh, 2), "kWh", "PV curtailment avoided")
 
     add("BATTERY SOC & AGING", "Initial SOC", round(INITIAL_SOC, 2), "%", "SOC at start of day")
@@ -1112,12 +1147,12 @@ def create_summary_matrix(results):
     add("BATTERY SOC & AGING", "Next-day commute ready", next_day_ready, "-", "Yes if final SOC remains above reserve")
     add("BATTERY SOC & AGING", "Reserve violation hours", reserve_violations, "hours", "Hours where SOC dropped below trip reserve")
     add("BATTERY SOC & AGING", "Battery throughput", round(battery_throughput_kwh, 2), "kWh", "Charge/discharge throughput used for aging estimate")
-    add("BATTERY SOC & AGING", "EFC throughput estimate", round(equivalent_full_cycles_throughput, 4), "EFC", "Equivalent full cycles from charge/discharge throughput")
+    add("BATTERY SOC & AGING", "EFC throughput estimate", round(equivalent_full_cycles_throughput, 4), "EFC", "Equivalent full cycles from throughput")
     add("BATTERY SOC & AGING", "EFC discharge-only estimate", round(equivalent_full_cycles_discharge_only, 4), "EFC", "Equivalent full cycles from discharge energy")
-    add("BATTERY SOC & AGING", "Estimated capacity fade", round(estimated_capacity_fade_percent, 5), "%", "Simplified aging estimate for this one-day event")
+    add("BATTERY SOC & AGING", "Estimated capacity fade", round(estimated_capacity_fade_percent, 5), "%", "Simplified one-day aging estimate")
 
     for decision, count in decision_counts.items():
-        add("DECISION COUNTS", decision, count, "hours", "Number of hours this controller decision occurred")
+        add("DECISION COUNTS", decision, count, "hours", "Number of hours this final decision occurred")
 
     return matrix
 
@@ -1196,6 +1231,7 @@ def save_event_log(event_log):
         "hour",
         "event",
         "decision",
+        "decision_reason",
         "relay_state",
         "ev_power_kw",
         "soc_percent",
@@ -1231,11 +1267,9 @@ def main():
 
     print("===================================================")
     print(" SCENARIO 2: HARSHIL'S SCENARIO STARTED")
-    print(" 14:00-16:00 = 2-hour afternoon V2H relay event")
-    print(" 16:00-17:00 = simulated charging, relay OFF")
-    print(" 17:00-21:00 = 4-hour evening V2H relay event")
-    print(" Relay ON    = V2H discharge active")
-    print(" Relay OFF   = hold / simulated charging / protection")
+    print(" Fuzzy controller decides: HOLD / CHARGE / DISCHARGE")
+    print(" Relay ON  = DISCHARGE")
+    print(" Relay OFF = HOLD or CHARGE")
     print(" 24 simulated hours = 5 real minutes")
     print("===================================================")
 
@@ -1244,16 +1278,17 @@ def main():
             hour = row["hour"]
             soc_before = ev_soc
 
-            controller_output = fuzzy_v2h_controller(
+            controller_output = fuzzy_controller(
                 row,
                 ev_soc,
                 cycle_budget_remaining,
             )
 
             decision = controller_output["decision"]
+            decision_reason = controller_output["decision_reason"]
             ev_power = controller_output["ev_power_kw"]
             relay_on = controller_output["relay_on"]
-            fuzzy_score = controller_output["fuzzy_score"]
+            fuzzy_action_score = controller_output["fuzzy_action_score"]
             dominant_rule = controller_output["dominant_rule"]
             dominant_strength = controller_output.get("dominant_strength", 0.0)
             dominant_score = controller_output.get("dominant_score", 0.0)
@@ -1261,7 +1296,7 @@ def main():
             levels = controller_output["levels"]
 
             without_v2h_grid = features["net_load"]
-            with_v2h_grid = without_v2h_grid - ev_power
+            with_controller_grid = without_v2h_grid - ev_power
 
             if relay_on:
                 relay.on()
@@ -1281,15 +1316,14 @@ def main():
 
             print(
                 f"{hour:02d}:00 | "
-                f"Window={row['control_window']:<23} | "
                 f"Load={row['home_load_kw']:4.2f} kW | "
                 f"PV={row['pv_actual_kw']:4.2f} kW | "
                 f"NoV2HGrid={without_v2h_grid:5.2f} kW | "
-                f"WithV2HGrid={with_v2h_grid:5.2f} kW | "
+                f"ManagedGrid={with_controller_grid:5.2f} kW | "
                 f"SOC={soc_before:5.1f}%->{soc_after:5.1f}% | "
                 f"Value={features['value_signal_c_per_kwh']:5.1f}c | "
                 f"Wear={features['battery_wear_stress']:4.2f} | "
-                f"Score={fuzzy_score:6.1f} | "
+                f"Fuzzy={fuzzy_action_score:6.1f} | "
                 f"EV={ev_power:5.2f} kW | "
                 f"Relay={relay_state:3s} | "
                 f"{decision}"
@@ -1298,14 +1332,13 @@ def main():
             hourly_row = {
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
                 "hour": hour,
-                "control_window": row["control_window"],
 
                 "home_load_kw": row["home_load_kw"],
                 "pv_actual_kw": row["pv_actual_kw"],
                 "pv_forecast_kw": row["pv_forecast_kw"],
 
                 "without_v2h_grid_kw": round(without_v2h_grid, 3),
-                "with_v2h_grid_kw": round(with_v2h_grid, 3),
+                "with_controller_grid_kw": round(with_controller_grid, 3),
 
                 "import_price_c_per_kwh": row["import_price_c_per_kwh"],
                 "feed_in_price_c_per_kwh": row["feed_in_price_c_per_kwh"],
@@ -1343,12 +1376,13 @@ def main():
                 "grid_stress_level_fuzzy": levels.get("grid_stress_level_fuzzy", "hard_rule"),
                 "battery_wear_level": levels.get("battery_wear_level", "hard_rule"),
 
-                "fuzzy_score": round(fuzzy_score, 2),
+                "fuzzy_action_score": round(fuzzy_action_score, 2),
                 "dominant_rule": dominant_rule,
                 "dominant_strength": round(dominant_strength, 3),
                 "dominant_score": round(dominant_score, 2),
 
                 "decision": decision,
+                "decision_reason": decision_reason,
                 "ev_power_kw": round(ev_power, 3),
                 "relay_state": relay_state,
             }
@@ -1358,17 +1392,20 @@ def main():
             rule_trace.append({
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
                 "hour": hour,
-                "control_window": row["control_window"],
+
                 "net_load_level": hourly_row["net_load_level"],
                 "value_signal_level": hourly_row["value_signal_level"],
                 "soc_margin_level": hourly_row["soc_margin_level"],
                 "grid_stress_level_fuzzy": hourly_row["grid_stress_level_fuzzy"],
                 "battery_wear_level": hourly_row["battery_wear_level"],
+
                 "dominant_rule": dominant_rule,
                 "dominant_strength": round(dominant_strength, 3),
                 "dominant_score": round(dominant_score, 2),
-                "fuzzy_score": round(fuzzy_score, 2),
+                "fuzzy_action_score": round(fuzzy_action_score, 2),
+
                 "decision": decision,
+                "decision_reason": decision_reason,
                 "relay_state": relay_state,
             })
 
@@ -1378,6 +1415,7 @@ def main():
                     "hour": hour,
                     "event": "STATE_CHANGE",
                     "decision": decision,
+                    "decision_reason": decision_reason,
                     "relay_state": relay_state,
                     "ev_power_kw": round(ev_power, 3),
                     "soc_percent": round(soc_before, 2),
