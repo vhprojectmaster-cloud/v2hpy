@@ -27,12 +27,10 @@ except ImportError:
 # FUZZY DECISION CONTROLLER FOR HOLD / CHARGE / DISCHARGE
 # ============================================================
 #
-# Main idea:
-# The fuzzy controller decides the action each hour:
-#
-#   HOLD       = no EV energy action
-#   CHARGE     = EV charging mode, relay OFF
-#   DISCHARGE  = V2H mode, relay ON
+# Final decision wording:
+#   HOLD
+#   CHARGE
+#   DISCHARGE
 #
 # Relay rule:
 #   Relay ON  = DISCHARGE only
@@ -45,6 +43,10 @@ except ImportError:
 #   24 simulated hours = 5 real minutes
 #   1 simulated hour = 12.5 seconds
 #
+# IMPORTANT:
+#   All files are saved only in:
+#   logs/scenario2_harshil_files/
+#
 # ============================================================
 
 
@@ -52,46 +54,31 @@ except ImportError:
 # REAL-WORLD DATA AND MODELLING REFERENCES
 # ============================================================
 #
-# The values below are representative scenario values for a
-# lab-scale thesis demonstration. They are not live API values.
-# The profile shapes and assumptions are based on the references
-# listed here.
+# The values are representative scenario values for a lab-scale
+# thesis demonstration. They are not live API values.
 #
 # [R1] Residential load + rooftop PV profile shape:
 #      Ausgrid Solar Home Electricity Data via CSIRO NEAR.
-#      Provides half-hourly gross solar generation and household
-#      consumption for solar homes.
 #      https://near.csiro.au/assets/42966a8f-bc3c-4bde-91d6-91bc5826aa21
 #
 # [R2] Rooftop PV actual and forecast modelling:
 #      AEMO Australian Solar Energy Forecasting System, ASEFS.
-#      Produces solar forecasts for large solar and small-scale
-#      distributed PV systems.
 #      https://www.aemo.com.au/energy-systems/electricity/national-electricity-market-nem/nem-forecasting-and-planning/operational-forecasting/solar-and-wind-energy-forecasting/australian-solar-energy-forecasting-system
 #
 # [R3] Retail import tariff:
-#      Essential Services Commission Victorian Default Offer 2025-26.
-#      Domestic two-period TOU tariff uses peak 3 pm-9 pm and
-#      off-peak all other times. The values here use a representative
-#      CitiPower-style peak/off-peak model for the scenario.
+#      Essential Services Commission Victorian Default Offer.
 #      https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/victorian-default-offer
 #
 # [R4] Feed-in tariff / export value:
-#      ESC minimum feed-in tariff review 2025-26 showed low daytime
-#      export value and higher evening export value. This is used
-#      to model the idea that midday export is not always valuable.
+#      ESC minimum feed-in tariff review.
 #      https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/minimum-feed-tariff/minimum-feed-tariff-review-2025-26
 #
 # [R5] CO2 factor:
 #      Australian National Greenhouse Accounts Factors.
-#      Victoria grid electricity emissions are used as the benchmark
-#      idea, with hourly representative values used for the scenario.
 #      https://www.dcceew.gov.au/climate-change/publications/national-greenhouse-accounts-factors-2025
 #
 # [R6] Battery cost / degradation cost:
-#      IEA battery cost trend and V2H battery degradation literature
-#      are used to justify a simplified user battery-wear cost.
-#      This is not a warranty model.
+#      IEA battery cost trend and V2H degradation literature.
 #      https://www.iea.org/reports/batteries-and-secure-energy-transitions
 #
 # ============================================================
@@ -107,20 +94,23 @@ relay = OutputDevice(RELAY_GPIO, active_high=True, initial_value=False)
 
 # ============================================================
 # SCENARIO 2 HARSHIL FILE PATHS
+# EVERYTHING IS INSIDE LOG_DIR
 # ============================================================
 
-DATA_DIR = os.path.join("data", "scenario2_harshil_files")
 LOG_DIR = os.path.join("logs", "scenario2_harshil_files")
 
-ENERGY_PROFILE_FILE = os.path.join(DATA_DIR, "energy_profile.csv")
-MARKET_NETWORK_FILE = os.path.join(DATA_DIR, "market_network_profile.csv")
-BATTERY_PROFILE_FILE = os.path.join(DATA_DIR, "battery_profile.csv")
+ENERGY_PROFILE_FILE = os.path.join(LOG_DIR, "input_energy_profile.csv")
+MARKET_NETWORK_FILE = os.path.join(LOG_DIR, "input_market_network_profile.csv")
+BATTERY_PROFILE_FILE = os.path.join(LOG_DIR, "input_battery_profile.csv")
+COMBINED_INPUT_PROFILE_FILE = os.path.join(LOG_DIR, "input_profile_used.csv")
 
 HOURLY_LOG_FILE = os.path.join(LOG_DIR, "hourly_log.csv")
 SUMMARY_MATRIX_FILE = os.path.join(LOG_DIR, "summary_matrix.csv")
 RULE_TRACE_FILE = os.path.join(LOG_DIR, "rule_trace.csv")
+FUZZY_RULE_STRENGTH_FILE = os.path.join(LOG_DIR, "fuzzy_rule_strength_log.csv")
 EVENT_LOG_FILE = os.path.join(LOG_DIR, "event_log.csv")
 SOURCE_REFERENCE_FILE = os.path.join(LOG_DIR, "data_source_references.csv")
+RUNTIME_CONFIG_FILE = os.path.join(LOG_DIR, "runtime_config.csv")
 
 
 # ============================================================
@@ -184,13 +174,13 @@ SOURCE_REFERENCES = [
     },
     {
         "item": "import_price_c_per_kwh",
-        "source": "ESC Victorian Default Offer 2025-26",
+        "source": "ESC Victorian Default Offer",
         "reason": "Domestic two-period time-of-use retail tariff basis",
         "url": "https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/victorian-default-offer",
     },
     {
         "item": "feed_in_price_c_per_kwh",
-        "source": "ESC minimum feed-in tariff review 2025-26",
+        "source": "ESC minimum feed-in tariff review",
         "reason": "Low daytime export value and evening export value basis",
         "url": "https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/minimum-feed-tariff/minimum-feed-tariff-review-2025-26",
     },
@@ -210,11 +200,11 @@ SOURCE_REFERENCES = [
 
 
 # ============================================================
-# CREATE INPUT CSV FILES
+# CREATE INPUT CSV FILES INSIDE LOG FOLDER
 # ============================================================
 
 def create_input_csvs():
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
     if OVERWRITE_INPUT_CSVS or not os.path.exists(ENERGY_PROFILE_FILE):
         energy_rows = [
@@ -238,14 +228,14 @@ def create_input_csvs():
             [12, 1.70, 4.00, 4.10, 0, 60, 0.45],
             [13, 1.80, 3.55, 3.60, 0, 60, 0.50],
 
-            # EV returns; fuzzy controller should see useful afternoon support.
+            # EV returns; fuzzy controller can choose afternoon discharge.
             [14, 2.90, 1.35, 1.50, 1, 55, 0.70],
             [15, 3.10, 1.10, 1.20, 1, 55, 0.80],
 
-            # PV surplus after first discharge; fuzzy controller should choose CHARGE.
+            # PV surplus after first discharge; fuzzy controller can choose charge.
             [16, 1.35, 2.45, 2.30, 1, 55, 0.30],
 
-            # Evening peak; fuzzy controller should choose DISCHARGE.
+            # Evening peak; fuzzy controller can choose discharge.
             [17, 3.00, 0.55, 0.55, 1, 55, 0.80],
             [18, 3.60, 0.00, 0.00, 1, 55, 1.00],
             [19, 3.50, 0.00, 0.00, 1, 55, 1.00],
@@ -412,6 +402,13 @@ def load_input_data():
     return combined_rows
 
 
+def save_combined_input_profile(input_rows):
+    with open(COMBINED_INPUT_PROFILE_FILE, "w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(input_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(input_rows)
+
+
 # ============================================================
 # FUZZY MEMBERSHIP FUNCTIONS
 # ============================================================
@@ -529,27 +526,6 @@ def calculate_features(row, soc, cycle_budget_remaining):
 # ============================================================
 # FUZZY CONTROLLER
 # ============================================================
-#
-# Inputs:
-#   1. net_load
-#   2. value_signal
-#   3. soc_margin
-#   4. grid_stress
-#   5. battery_wear_stress
-#
-# Output:
-#   fuzzy_action_score
-#
-#   Negative score  -> CHARGE
-#   Near zero score -> HOLD
-#   Positive score  -> DISCHARGE
-#
-# Simple final decisions:
-#   HOLD
-#   CHARGE
-#   DISCHARGE
-#
-# ============================================================
 
 def fuzzy_controller(row, soc, cycle_budget_remaining):
     features = calculate_features(row, soc, cycle_budget_remaining)
@@ -576,6 +552,8 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
             "dominant_score": 0.0,
             "features": features,
             "levels": {},
+            "memberships": {},
+            "rule_details": [],
         }
 
     if soc <= SOC_MIN:
@@ -590,6 +568,8 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
             "dominant_score": 0.0,
             "features": features,
             "levels": {},
+            "memberships": {},
+            "rule_details": [],
         }
 
     if soc_margin <= 0:
@@ -604,6 +584,8 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
             "dominant_score": 0.0,
             "features": features,
             "levels": {},
+            "memberships": {},
+            "rule_details": [],
         }
 
     if cycle_budget_remaining <= 0:
@@ -618,6 +600,8 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
             "dominant_score": 0.0,
             "features": features,
             "levels": {},
+            "memberships": {},
+            "rule_details": [],
         }
 
     # -----------------------------
@@ -656,6 +640,14 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
         "high": trapezoid(battery_wear_stress, 0.70, 0.85, 1.00, 1.00),
     }
 
+    memberships = {
+        "net_load": net_load_mf,
+        "value_signal": value_mf,
+        "soc_margin": soc_margin_mf,
+        "grid_stress": grid_stress_mf,
+        "battery_wear": battery_wear_mf,
+    }
+
     levels = {
         "net_load_level": best_label(net_load_mf)[0],
         "value_signal_level": best_label(value_mf)[0],
@@ -667,22 +659,12 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
     # -----------------------------
     # Fuzzy rule base
     # -----------------------------
-    #
-    # Output score:
-    #   -100 = strong charge
-    #    -70 = normal charge
-    #      0 = hold
-    #    +60 = light discharge
-    #    +80 = medium discharge
-    #   +100 = strong discharge
-    #
-    # All decisions are made by fuzzy score.
-    # -----------------------------
 
     rules = []
 
     # HOLD rules
     rules.append((
+        "R1",
         max(
             net_load_mf["balanced"],
             value_mf["low"],
@@ -695,6 +677,7 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
 
     # CHARGE rules
     rules.append((
+        "R2",
         min(
             net_load_mf["surplus"],
             max(soc_margin_mf["tight"], soc_margin_mf["safe"]),
@@ -705,6 +688,7 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
     ))
 
     rules.append((
+        "R3",
         min(
             net_load_mf["surplus"],
             soc_margin_mf["high"],
@@ -716,6 +700,7 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
 
     # DISCHARGE rules
     rules.append((
+        "R4",
         min(
             net_load_mf["low_deficit"],
             max(value_mf["medium"], value_mf["high"]),
@@ -728,6 +713,7 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
     ))
 
     rules.append((
+        "R5",
         min(
             net_load_mf["medium_deficit"],
             max(value_mf["medium"], value_mf["high"]),
@@ -740,6 +726,7 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
     ))
 
     rules.append((
+        "R6",
         min(
             net_load_mf["high_deficit"],
             value_mf["high"],
@@ -752,6 +739,7 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
     ))
 
     rules.append((
+        "R7",
         min(
             grid_stress_mf["high"],
             max(net_load_mf["medium_deficit"], net_load_mf["high_deficit"]),
@@ -773,9 +761,21 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
     dominant_strength = 0.0
     dominant_score = 0.0
 
-    for strength, score, rule_name in rules:
-        numerator += strength * score
+    rule_details = []
+
+    for rule_id, strength, score, rule_name in rules:
+        contribution = strength * score
+
+        numerator += contribution
         denominator += strength
+
+        rule_details.append({
+            "rule_id": rule_id,
+            "rule_name": rule_name,
+            "strength": strength,
+            "score": score,
+            "contribution": contribution,
+        })
 
         if strength > dominant_strength:
             dominant_strength = strength
@@ -862,6 +862,8 @@ def fuzzy_controller(row, soc, cycle_budget_remaining):
         "dominant_score": dominant_score,
         "features": features,
         "levels": levels,
+        "memberships": memberships,
+        "rule_details": rule_details,
     }
 
 
@@ -1092,7 +1094,7 @@ def create_summary_matrix(results):
         })
 
     add("SCENARIO 2 HARSHIL OVERVIEW", "Scenario name", "Scenario 2: Harshil's Scenario", "-", "Fuzzy controller chooses HOLD, CHARGE, or DISCHARGE")
-    add("SCENARIO 2 HARSHIL OVERVIEW", "Data/log folder name", "scenario2_harshil_files", "-", "All Scenario 2 Harshil files are saved here")
+    add("SCENARIO 2 HARSHIL OVERVIEW", "All file location", LOG_DIR, "-", "Every input, log, trace, summary, and reference file is saved here")
     add("SCENARIO 2 HARSHIL OVERVIEW", "Relay rule", "Relay ON only for DISCHARGE", "-", "CHARGE and HOLD keep relay OFF")
 
     add("FUZZY CONTROLLER", "Number of fuzzy inputs", 5, "inputs", "net load, value signal, SOC margin, grid stress, battery wear")
@@ -1177,6 +1179,10 @@ def print_summary_matrix(matrix):
     print("\n======================================================================")
 
 
+# ============================================================
+# SAVE FILES
+# ============================================================
+
 def save_summary_matrix(matrix):
     with open(SUMMARY_MATRIX_FILE, "w", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=[
@@ -1204,9 +1210,33 @@ def save_source_references():
         writer.writerows(SOURCE_REFERENCES)
 
 
-# ============================================================
-# LOGGING HELPERS
-# ============================================================
+def save_runtime_config():
+    rows = [
+        ["LOG_DIR", LOG_DIR],
+        ["EV_BATTERY_KWH", EV_BATTERY_KWH],
+        ["EV_MAX_DISCHARGE_KW", EV_MAX_DISCHARGE_KW],
+        ["EV_MAX_CHARGE_KW", EV_MAX_CHARGE_KW],
+        ["DISCHARGE_EFFICIENCY", DISCHARGE_EFFICIENCY],
+        ["CHARGE_EFFICIENCY", CHARGE_EFFICIENCY],
+        ["SOC_MIN", SOC_MIN],
+        ["SOC_MAX", SOC_MAX],
+        ["INITIAL_SOC", INITIAL_SOC],
+        ["PV_REFERENCE_KW", PV_REFERENCE_KW],
+        ["HOUR_DELAY_SECONDS", HOUR_DELAY_SECONDS],
+        ["CHARGE_SCORE_THRESHOLD", CHARGE_SCORE_THRESHOLD],
+        ["DISCHARGE_SCORE_THRESHOLD", DISCHARGE_SCORE_THRESHOLD],
+        ["DAILY_DISCHARGE_BUDGET_KWH", DAILY_DISCHARGE_BUDGET_KWH],
+        ["CARBON_VALUE_C_PER_KG_CO2", CARBON_VALUE_C_PER_KG_CO2],
+        ["GRID_STRESS_VALUE_C_PER_KWH", GRID_STRESS_VALUE_C_PER_KWH],
+        ["ASSUMED_CYCLE_LIFE_EFC", ASSUMED_CYCLE_LIFE_EFC],
+        ["BASE_CAPACITY_FADE_PERCENT_PER_EFC", BASE_CAPACITY_FADE_PERCENT_PER_EFC],
+    ]
+
+    with open(RUNTIME_CONFIG_FILE, "w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["setting", "value"])
+        writer.writerows(rows)
+
 
 def save_hourly_log(results):
     with open(HOURLY_LOG_FILE, "w", newline="") as file:
@@ -1223,6 +1253,16 @@ def save_rule_trace(rule_trace):
         writer = csv.DictWriter(file, fieldnames=list(rule_trace[0].keys()))
         writer.writeheader()
         writer.writerows(rule_trace)
+
+
+def save_fuzzy_rule_strength_log(rule_strength_log):
+    if len(rule_strength_log) == 0:
+        return
+
+    with open(FUZZY_RULE_STRENGTH_FILE, "w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(rule_strength_log[0].keys()))
+        writer.writeheader()
+        writer.writerows(rule_strength_log)
 
 
 def save_event_log(event_log):
@@ -1244,6 +1284,17 @@ def save_event_log(event_log):
 
 
 # ============================================================
+# FLATTEN MEMBERSHIP VALUES FOR HOURLY LOG
+# ============================================================
+
+def get_membership_value(memberships, input_name, label):
+    if input_name not in memberships:
+        return 0.0
+
+    return round(memberships[input_name].get(label, 0.0), 4)
+
+
+# ============================================================
 # MAIN PROGRAM
 # ============================================================
 
@@ -1252,14 +1303,17 @@ def main():
 
     create_input_csvs()
     save_source_references()
+    save_runtime_config()
 
     input_rows = load_input_data()
+    save_combined_input_profile(input_rows)
 
     ev_soc = INITIAL_SOC
     cycle_budget_remaining = 1.0
 
     results = []
     rule_trace = []
+    rule_strength_log = []
     event_log = []
 
     previous_decision = None
@@ -1270,6 +1324,7 @@ def main():
     print(" Fuzzy controller decides: HOLD / CHARGE / DISCHARGE")
     print(" Relay ON  = DISCHARGE")
     print(" Relay OFF = HOLD or CHARGE")
+    print(f" All files saved in: {LOG_DIR}/")
     print(" 24 simulated hours = 5 real minutes")
     print("===================================================")
 
@@ -1294,6 +1349,8 @@ def main():
             dominant_score = controller_output.get("dominant_score", 0.0)
             features = controller_output["features"]
             levels = controller_output["levels"]
+            memberships = controller_output["memberships"]
+            rule_details = controller_output["rule_details"]
 
             without_v2h_grid = features["net_load"]
             with_controller_grid = without_v2h_grid - ev_power
@@ -1376,6 +1433,28 @@ def main():
                 "grid_stress_level_fuzzy": levels.get("grid_stress_level_fuzzy", "hard_rule"),
                 "battery_wear_level": levels.get("battery_wear_level", "hard_rule"),
 
+                "net_load_mf_surplus": get_membership_value(memberships, "net_load", "surplus"),
+                "net_load_mf_balanced": get_membership_value(memberships, "net_load", "balanced"),
+                "net_load_mf_low_deficit": get_membership_value(memberships, "net_load", "low_deficit"),
+                "net_load_mf_medium_deficit": get_membership_value(memberships, "net_load", "medium_deficit"),
+                "net_load_mf_high_deficit": get_membership_value(memberships, "net_load", "high_deficit"),
+
+                "value_mf_low": get_membership_value(memberships, "value_signal", "low"),
+                "value_mf_medium": get_membership_value(memberships, "value_signal", "medium"),
+                "value_mf_high": get_membership_value(memberships, "value_signal", "high"),
+
+                "soc_margin_mf_tight": get_membership_value(memberships, "soc_margin", "tight"),
+                "soc_margin_mf_safe": get_membership_value(memberships, "soc_margin", "safe"),
+                "soc_margin_mf_high": get_membership_value(memberships, "soc_margin", "high"),
+
+                "grid_stress_mf_low": get_membership_value(memberships, "grid_stress", "low"),
+                "grid_stress_mf_medium": get_membership_value(memberships, "grid_stress", "medium"),
+                "grid_stress_mf_high": get_membership_value(memberships, "grid_stress", "high"),
+
+                "battery_wear_mf_low": get_membership_value(memberships, "battery_wear", "low"),
+                "battery_wear_mf_medium": get_membership_value(memberships, "battery_wear", "medium"),
+                "battery_wear_mf_high": get_membership_value(memberships, "battery_wear", "high"),
+
                 "fuzzy_action_score": round(fuzzy_action_score, 2),
                 "dominant_rule": dominant_rule,
                 "dominant_strength": round(dominant_strength, 3),
@@ -1409,6 +1488,20 @@ def main():
                 "relay_state": relay_state,
             })
 
+            for rule in rule_details:
+                rule_strength_log.append({
+                    "timestamp": datetime.now().isoformat(timespec="seconds"),
+                    "hour": hour,
+                    "rule_id": rule["rule_id"],
+                    "rule_name": rule["rule_name"],
+                    "rule_strength": round(rule["strength"], 4),
+                    "rule_score": round(rule["score"], 2),
+                    "rule_contribution": round(rule["contribution"], 4),
+                    "final_fuzzy_action_score": round(fuzzy_action_score, 2),
+                    "final_decision": decision,
+                    "relay_state": relay_state,
+                })
+
             if decision != previous_decision or relay_state != previous_relay_state:
                 event_log.append({
                     "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -1436,6 +1529,7 @@ def main():
         if len(results) > 0:
             save_hourly_log(results)
             save_rule_trace(rule_trace)
+            save_fuzzy_rule_strength_log(rule_strength_log)
             save_event_log(event_log)
 
             summary_matrix = create_summary_matrix(results)
@@ -1443,7 +1537,18 @@ def main():
             save_summary_matrix(summary_matrix)
 
             print(f"\nScenario 2 Harshil files saved to: {LOG_DIR}/")
-            print(f"Scenario 2 Harshil data files saved to: {DATA_DIR}/")
+            print("Saved files:")
+            print(f"- {ENERGY_PROFILE_FILE}")
+            print(f"- {MARKET_NETWORK_FILE}")
+            print(f"- {BATTERY_PROFILE_FILE}")
+            print(f"- {COMBINED_INPUT_PROFILE_FILE}")
+            print(f"- {HOURLY_LOG_FILE}")
+            print(f"- {SUMMARY_MATRIX_FILE}")
+            print(f"- {RULE_TRACE_FILE}")
+            print(f"- {FUZZY_RULE_STRENGTH_FILE}")
+            print(f"- {EVENT_LOG_FILE}")
+            print(f"- {SOURCE_REFERENCE_FILE}")
+            print(f"- {RUNTIME_CONFIG_FILE}")
         else:
             print("No results recorded.")
 
