@@ -23,68 +23,6 @@ except ImportError:
 
 
 # ============================================================
-# SCENARIO 2: HARSHIL'S SCENARIO
-# FUZZY DECISION CONTROLLER FOR HOLD / CHARGE / DISCHARGE
-# ============================================================
-#
-# Final decision wording:
-#   HOLD
-#   CHARGE
-#   DISCHARGE
-#
-# Relay rule:
-#   Relay ON  = DISCHARGE only
-#   Relay OFF = HOLD or CHARGE
-#
-# Hardware:
-#   Relay IN2 -> Raspberry Pi GPIO27 / physical pin 13
-#
-# Timing:
-#   24 simulated hours = 5 real minutes
-#   1 simulated hour = 12.5 seconds
-#
-# IMPORTANT:
-#   All files are saved only in:
-#   logs/scenario2_harshil_files/
-#
-# ============================================================
-
-
-# ============================================================
-# REAL-WORLD DATA AND MODELLING REFERENCES
-# ============================================================
-#
-# The values are representative scenario values for a lab-scale
-# thesis demonstration. They are not live API values.
-#
-# [R1] Residential load + rooftop PV profile shape:
-#      Ausgrid Solar Home Electricity Data via CSIRO NEAR.
-#      https://near.csiro.au/assets/42966a8f-bc3c-4bde-91d6-91bc5826aa21
-#
-# [R2] Rooftop PV actual and forecast modelling:
-#      AEMO Australian Solar Energy Forecasting System, ASEFS.
-#      https://www.aemo.com.au/energy-systems/electricity/national-electricity-market-nem/nem-forecasting-and-planning/operational-forecasting/solar-and-wind-energy-forecasting/australian-solar-energy-forecasting-system
-#
-# [R3] Retail import tariff:
-#      Essential Services Commission Victorian Default Offer.
-#      https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/victorian-default-offer
-#
-# [R4] Feed-in tariff / export value:
-#      ESC minimum feed-in tariff review.
-#      https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/minimum-feed-tariff/minimum-feed-tariff-review-2025-26
-#
-# [R5] CO2 factor:
-#      Australian National Greenhouse Accounts Factors.
-#      https://www.dcceew.gov.au/climate-change/publications/national-greenhouse-accounts-factors-2025
-#
-# [R6] Battery cost / degradation cost:
-#      IEA battery cost trend and V2H degradation literature.
-#      https://www.iea.org/reports/batteries-and-secure-energy-transitions
-#
-# ============================================================
-
-
-# ============================================================
 # RELAY SETUP
 # ============================================================
 
@@ -153,51 +91,6 @@ BASE_CAPACITY_FADE_PERCENT_PER_EFC = (
 
 # Always overwrite demo CSVs so the intended scenario runs.
 OVERWRITE_INPUT_CSVS = True
-
-
-# ============================================================
-# SOURCE REFERENCE SUMMARY
-# ============================================================
-
-SOURCE_REFERENCES = [
-    {
-        "item": "home_load_kw and pv_actual_kw profile shape",
-        "source": "Ausgrid Solar Home Electricity Data via CSIRO NEAR",
-        "reason": "Household consumption and rooftop PV profile shape",
-        "url": "https://near.csiro.au/assets/42966a8f-bc3c-4bde-91d6-91bc5826aa21",
-    },
-    {
-        "item": "pv_forecast_kw and forecast error concept",
-        "source": "AEMO Australian Solar Energy Forecasting System",
-        "reason": "Rooftop PV and solar forecasting basis",
-        "url": "https://www.aemo.com.au/energy-systems/electricity/national-electricity-market-nem/nem-forecasting-and-planning/operational-forecasting/solar-and-wind-energy-forecasting/australian-solar-energy-forecasting-system",
-    },
-    {
-        "item": "import_price_c_per_kwh",
-        "source": "ESC Victorian Default Offer",
-        "reason": "Domestic two-period time-of-use retail tariff basis",
-        "url": "https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/victorian-default-offer",
-    },
-    {
-        "item": "feed_in_price_c_per_kwh",
-        "source": "ESC minimum feed-in tariff review",
-        "reason": "Low daytime export value and evening export value basis",
-        "url": "https://www.esc.vic.gov.au/electricity-and-gas/prices-tariffs-and-benchmarks/minimum-feed-tariff/minimum-feed-tariff-review-2025-26",
-    },
-    {
-        "item": "grid_co2_kg_per_kwh",
-        "source": "Australian National Greenhouse Accounts Factors",
-        "reason": "Victoria grid electricity emissions benchmark",
-        "url": "https://www.dcceew.gov.au/climate-change/publications/national-greenhouse-accounts-factors-2025",
-    },
-    {
-        "item": "battery_wear_cost and capacity fade estimate",
-        "source": "IEA battery cost trend and V2H degradation literature",
-        "reason": "Simplified user battery-wear cost and aging model",
-        "url": "https://www.iea.org/reports/batteries-and-secure-energy-transitions",
-    },
-]
-
 
 # ============================================================
 # CREATE INPUT CSV FILES INSIDE LOG FOLDER
@@ -1295,7 +1188,7 @@ def get_membership_value(memberships, input_name, label):
 
 
 # ============================================================
-# MAIN PROGRAM
+# MAIN output PROGRAM
 # ============================================================
 
 def main():

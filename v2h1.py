@@ -21,7 +21,7 @@ import os
 # -----------------------------
 # RELAY SETUP
 # -----------------------------
-# If your lamp works opposite, change active_high=True to False.
+
 
 relay = OutputDevice(27, active_high=True, initial_value=False)
 
