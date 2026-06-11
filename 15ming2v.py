@@ -3,7 +3,7 @@ from time import sleep
 from datetime import datetime
 
 # ============================================================
-# SIMPLE CHARGING DEMO
+#  CHARGING DEMO
 # ============================================================
 # Relay ON  = charger connected, battery charging
 # Relay OFF = charger disconnected
