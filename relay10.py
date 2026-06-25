@@ -1,7 +1,7 @@
 from   import OutputDevice
 from time import sleep
 
-relay = OutputDevice(27, active_high=False, initial_value=False)
+relay = OutputDevice(27, active_high=True, initial_value=False)
 
 while True:
     print("Relay 2 ON")
